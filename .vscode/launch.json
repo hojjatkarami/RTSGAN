@@ -1,0 +1,34 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                // main2012.py                
+                "--dataset", "./data/physio_data/full2012.pkl",
+                "--task-name", "test",
+                "--epochs", "200",
+                "--iterations","500",
+                "--log-dir","2012_result",
+                // "--fix-ae", "2012_result/test/ae.dat",
+                // "--fix-gan", "2012_result/test/generator.dat",
+
+
+
+                // // miss2012.py
+
+                // "--task-name","2012_result/test", // TSTR
+                "--task-name","./data/physio_data", // TRTR
+                "--impute","zero",
+            ]
+        }
+    ]
+}

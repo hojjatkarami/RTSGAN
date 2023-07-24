@@ -36,7 +36,7 @@ class Encoder(nn.Module):
         #x = torch.cat([x, dynamics], dim=-1)
         x = dynamics
         
-        packed = nn.utils.rnn.pack_padded_sequence(x, seq_len, batch_first=True, enforce_sorted=False)
+        packed = nn.utils.rnn.pack_padded_sequence(x, seq_len.cpu(), batch_first=True, enforce_sorted=False)
         out, h = self.rnn(packed)
         out, _ = torch.nn.utils.rnn.pad_packed_sequence(out, batch_first=True)
         #h, c = h

@@ -14,7 +14,11 @@ from gan import Generator, Discriminator
 import random
 from torch import autograd
 import time
-    
+
+from tqdm import tqdm
+
+
+
 class AeGAN:
     def __init__(self, processors, params):
         self.params = params
@@ -130,23 +134,23 @@ class AeGAN:
         return torch.mean(loss)
     
     def time_loss(self, data, target, seq_len):
-        loss = self.loss_con(data, target)
-        seq_mask = seq_len_to_mask(seq_len)
+        loss = self.loss_con(data, target) # batch_size, max_len, 1
+        seq_mask = seq_len_to_mask(seq_len) # batch_size, max_len
         loss = torch.masked_select(loss, seq_mask.unsqueeze(-1))
-        return torch.mean(loss)
+        return torch.mean(loss) # scalar
     
-    def missing_loss(self, data, target, seq_len):
+    def missing_loss(self, data, target, seq_len): # data (batch_size, seq_len, 35)
         thr = torch.Tensor([model.threshold for model in self.dynamic_processor.models if model.missing]).to(data.device)
-        thr = thr.unsqueeze(0).unsqueeze(0)
+        thr = thr.unsqueeze(0).unsqueeze(0) # 1, 1, 35
         
-        scale = thr * target + (1 - thr) * (1 - target)
-        loss = self.loss_mis(data, target) * scale
-        seq_mask = seq_len_to_mask(seq_len)
+        scale = thr * target + (1 - thr) * (1 - target) # data.shape
+        loss = self.loss_mis(data, target) * scale # BCE loss with red=none with data.shape
+        seq_mask = seq_len_to_mask(seq_len) # batch_size, seq_len
         loss = torch.masked_select(loss, seq_mask.unsqueeze(-1))
         
-        mx, _ = max_pooling(data, seq_len)
-        gold_mx, _ = torch.max(target, dim=1)
-        loss1 = self.loss_mis(mx, gold_mx)
+        mx, _ = max_pooling(data, seq_len) # batch_size, 35
+        gold_mx, _ = torch.max(target, dim=1) # batch_size, 35 which features are available during the whole sequence
+        loss1 = self.loss_mis(mx, gold_mx) # batch_size, 35
         return torch.mean(loss) + torch.mean(torch.masked_select(loss1, gold_mx==0))
     
     def train_ae(self, dataset, epochs=800):
@@ -227,7 +231,7 @@ class AeGAN:
         idxs = list(range(len(dataset)))
         batch = DataSetIter(dataset=dataset, batch_size=batch_size, sampler=RandomSampler())
         min_loss = 1e15
-        for iteration in range(iterations):
+        for iteration in tqdm(range(iterations)):
             avg_d_loss = 0
             t1 = time.time()
             toggle_grad(self.generator, False)
@@ -290,13 +294,13 @@ class AeGAN:
             toggle_grad(self.generator, True)
             toggle_grad(self.discriminator, False)
             self.generator_optm.zero_grad()
-            z = torch.randn(batch_size, self.params['noise_dim']).to(self.device)
-            fake = self.generator(z)
-            g_loss = -torch.mean(self.discriminator(fake))
+            z = torch.randn(batch_size, self.params['noise_dim']).to(self.device) # batch_size, noise_dim
+            fake = self.generator(z) # batch_size, hidden_dim
+            g_loss = -torch.mean(self.discriminator(fake)) # [batch,1]->scalar
             g_loss.backward()
             self.generator_optm.step()
 
-            if iteration % 1000 == 999:
+            if iteration % 50 == 49:
                 self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] [%f]' % (
                     iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(), reg.item()
                 ))       
@@ -356,7 +360,7 @@ class AeGAN:
         res = n - tt * batch_size
         if res>0:
             _gen(res)
-        h = torch.cat(h, dim=0).cpu().numpy()
+        h = torch.cat(h, dim=0).cpu().numpy() # n, hidden_dim
         return h
     
 # Utility functions

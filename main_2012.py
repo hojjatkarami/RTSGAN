@@ -102,6 +102,18 @@ if options.debug:
 # ===-----------------------------------------------------------------------===
 # Build model and trainer
 # ===-----------------------------------------------------------------------===
+# dict_keys(['seq_len', 'dyn', 'lag', 'mask', 'sta', 'times', 'priv', 'nex', 'label'])
+# seq_len: (batch_size)
+# dyn: (batch_size, seq_len, 35)
+# lag: (batch_size, seq_len, 35)
+# mask: (batch_size, seq_len, 35)
+# sta: (batch_size, 13)
+# times: (batch_size, seq_len,1)
+# priv: (batch_size, seq_len, 35)
+# nex: (batch_size, seq_len, 35)
+# label: (batch_size)
+
+
 
 params=vars(options)
 params["static_processor"]=static_processor

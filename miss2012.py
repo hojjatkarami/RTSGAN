@@ -46,10 +46,11 @@ device = torch.device("cuda:{}".format(devices[0]))
 rawset = pickle.load(open("./data/physio_data/full2012.pkl", "rb"))
 if options.task_name == './data/physio_data':
     train_set=rawset["raw_set"]    
+    test_set=rawset["test_set"]
 else:
     dataset = pickle.load(open(options.task_name+"/2012.pkl", "rb"))
     train_set=dataset["train_set"]
-test_set=dataset["test_set"]
+    test_set=dataset["test_set"]
 d_P=rawset["dynamic_processor"]
 s_P=rawset["static_processor"]
 assert s_P.models[5].name =='Label'
@@ -100,7 +101,7 @@ class CLS(nn.Module):
         else:
             x = torch.cat([x, dynamics, mask, priv, lag, times], dim=-1)
             
-        packed = nn.utils.rnn.pack_padded_sequence(x, seq_len, batch_first=True, enforce_sorted=False)
+        packed = nn.utils.rnn.pack_padded_sequence(x, seq_len.cpu(), batch_first=True, enforce_sorted=False)
         out, h = self.rnn(packed)
         
         h3 = h.view(self.layers, -1, bs, self.hidden_dim)[-1].view(bs, -1)
@@ -159,6 +160,9 @@ for _ in range(4):
         prob = np.array(prob)
         preds = (prob > 0.5).astype('int')
         label = np.array(label,dtype=int)
+
+        if label.sum()==0:
+            return 0
         auc = roc_auc_score(label, prob)
         f1 = f1_score(label, preds)
         acc = accuracy_score(label, preds) 

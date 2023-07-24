@@ -34,30 +34,30 @@ class Encoder(nn.Module):
         
     def forward(self, statics, dynamics, priv, nex, mask, times, seq_len):
         bs, max_len, _ = dynamics.size()
-        x = statics.unsqueeze(1).expand(-1, max_len, -1)
-        x = torch.cat([x, dynamics, priv, mask], dim=-1)
-        x = self.embed(x, times)
+        x = statics.unsqueeze(1).expand(-1, max_len, -1) # bs, max_len, statics_dim
+        x = torch.cat([x, dynamics, priv, mask], dim=-1) # bs, max_len, dynamics_dim*3 + statics_dim
+        x = self.embed(x, times) # bs, max_len, hidden_dim
         #x = dynamics
         
-        packed = nn.utils.rnn.pack_padded_sequence(x, seq_len, batch_first=True, enforce_sorted=False)
-        out, h = self.rnn(packed)
-        out, _ = torch.nn.utils.rnn.pad_packed_sequence(out, batch_first=True)
+        packed = nn.utils.rnn.pack_padded_sequence(x, seq_len.cpu(), batch_first=True, enforce_sorted=False)
+        out, h = self.rnn(packed) # h num_layers, bs, hidden_dim
+        out, _ = torch.nn.utils.rnn.pad_packed_sequence(out, batch_first=True) # bs, max_len, hidden_dim
         #h, c = h
-        h = h.view(self.layers, -1, bs, self.hidden_dim)
-        h1, _ = max_pooling(out, seq_len)
-        h2 = mean_pooling(out, seq_len)
-        h3 = h[-1].view(bs, -1)
-        glob = torch.cat([h1,h2,h3], dim=-1)
-        glob = self.final(self.fc(self.drop(glob)))
+        h = h.view(self.layers, -1, bs, self.hidden_dim) # layers, 1, bs, hidden_dim
+        h1, _ = max_pooling(out, seq_len) # bs, hidden_dim
+        h2 = mean_pooling(out, seq_len) # bs, hidden_dim
+        h3 = h[-1].view(bs, -1) # bs, hidden_dim
+        glob = torch.cat([h1,h2,h3], dim=-1) # bs, hidden_dim*3
+        glob = self.final(self.fc(self.drop(glob))) # bs, hidden_dim [s in paper]
         
         #hf = h[:,0]
         #hb = h[:,1]
         #lasth = self.final(self.fc1(torch.cat([hf,hb], dim=-1))) 
-        lasth = h.view(-1, bs, self.hidden_dim)
+        lasth = h.view(-1, bs, self.hidden_dim) # layers, bs, hidden_dim
         
-        lasth = lasth.permute(1,0,2).contiguous().view(bs, -1)
+        lasth = lasth.permute(1,0,2).contiguous().view(bs, -1) # bs, layers*hidden_dim
         lasth = self.final(self.fc1(self.drop(lasth)))
-        hidden = torch.cat([glob, lasth], dim=-1)
+        hidden = torch.cat([glob, lasth], dim=-1)  # bs, hidden_dim*(layers+1)   r = [s, {h} in paper]
         return hidden
 
 def apply_activation(processors, x):
@@ -105,40 +105,40 @@ class Decoder(nn.Module):
         self.miss_fc = nn.Linear(hidden_dim, self.miss_dim)
         self.time_fc = nn.Linear(hidden_dim, 1)
             
-    def forward(self, embed, sta, dynamics, lag, mask, priv, times, seq_len, forcing=11):
-        glob, hidden = embed[:, :self.hidden_dim], embed[:, self.hidden_dim:]
-        statics_x = self.statics_fc(glob)
-        gen_sta = apply_activation(self.s_P, statics_x)
+    def forward(self, embed, sta, dynamics, lag, mask, priv, times, seq_len, forcing=11): # embed: bs, hidden_dim*(layers+1)
+        glob, hidden = embed[:, :self.hidden_dim], embed[:, self.hidden_dim:] # glob is s in the paper [bs, hidden_dim]
+        statics_x = self.statics_fc(glob) # bs, statics_dim
+        gen_sta = apply_activation(self.s_P, statics_x) # bs, statics_dim
         
         bs, max_len, _ = dynamics.size()
-        hidden = hidden.view(bs, self.layers, -1).permute(1,0,2).contiguous()
+        hidden = hidden.view(bs, self.layers, -1).permute(1,0,2).contiguous() # layers, bs, hidden_dim
         hidden, finh = hidden[:-1], hidden[-1:]
         
         if forcing >=1:
-            pad_dynamics = pad_zero(dynamics)
+            pad_dynamics = pad_zero(dynamics) # bs, max_len, dynamics_dim (right shift of dynamics across second dim)
             pad_mask = pad_zero(mask)
             pad_times = pad_zero(times)
             pad_priv = pad_zero(priv)
-            sta_expand = sta.unsqueeze(1).expand(-1, max_len, -1)
-            glob_expand = glob.unsqueeze(1).expand(-1, max_len, -1)
-            x = torch.cat([sta_expand, pad_dynamics, pad_priv, pad_mask], dim=-1)
-            x = self.embed(x, pad_times)
-            packed = nn.utils.rnn.pack_padded_sequence(x, seq_len, batch_first=True, enforce_sorted=False)
+            sta_expand = sta.unsqueeze(1).expand(-1, max_len, -1) # bs, max_len, statics_dim
+            glob_expand = glob.unsqueeze(1).expand(-1, max_len, -1) # bs, max_len, hidden_dim
+            x = torch.cat([sta_expand, pad_dynamics, pad_priv, pad_mask], dim=-1) # bs, max_len, dynamics_dim*3 + statics_dim
+            x = self.embed(x, pad_times) # bs, max_len, hidden_dim
+            packed = nn.utils.rnn.pack_padded_sequence(x, seq_len.cpu(), batch_first=True, enforce_sorted=False)
 
-            out, h = self.miss_rnn(packed, hidden)
-            out, _ = torch.nn.utils.rnn.pad_packed_sequence(out, batch_first=True) 
-            gen_times = torch.sigmoid(self.time_fc(out)) + pad_times
-            gen_mask = torch.sigmoid(self.miss_fc(out))
+            out, h = self.miss_rnn(packed, hidden) # h layers-1, bs, hidden_dim
+            out, _ = torch.nn.utils.rnn.pad_packed_sequence(out, batch_first=True)  # bs, max_len, hidden_dim
+            gen_times = torch.sigmoid(self.time_fc(out)) + pad_times # bs, max_len, 1
+            gen_mask = torch.sigmoid(self.miss_fc(out)) # bs, max_len, miss_dim
 
-            beta = torch.exp(-torch.relu(self.decay(torch.cat([mask, lag],dim=-1))))
+            beta = torch.exp(-torch.relu(self.decay(torch.cat([mask, lag],dim=-1)))) # bs, max_len, latent_dim
             y = beta * out
 
-            y = torch.cat([y, glob_expand], dim=-1)
-            packed = nn.utils.rnn.pack_padded_sequence(y, seq_len, batch_first=True, enforce_sorted=False)
-            out1, finh = self.rnn(packed, finh)
-            out1, _ = torch.nn.utils.rnn.pad_packed_sequence(out1, batch_first=True) 
+            y = torch.cat([y, glob_expand], dim=-1) # bs, max_len, hidden_dim*2
+            packed = nn.utils.rnn.pack_padded_sequence(y, seq_len.cpu(), batch_first=True, enforce_sorted=False)
+            out1, finh = self.rnn(packed, finh) # finh 1, bs, hidden_dim
+            out1, _ = torch.nn.utils.rnn.pad_packed_sequence(out1, batch_first=True)  # bs, max_len, hidden_dim
 
-            dyn = self.dynamics_fc(out1)
+            dyn = self.dynamics_fc(out1) # bs, max_len, dynamics_dim
             dyn = apply_activation(self.d_P, dyn.view(-1, self.dynamics_dim)).view(bs, -1, self.dynamics_dim)
         else:
             true_sta = sta.unsqueeze(1)

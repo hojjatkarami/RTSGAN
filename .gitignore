@@ -135,6 +135,7 @@ dmypy.json
 data/
 2012_result/
 stock_result/
+energy_result/
 .vscode/
 workspace/
 ```

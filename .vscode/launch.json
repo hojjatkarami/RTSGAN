@@ -10,24 +10,26 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": true,
+            "justMyCode": false,
             "args": [
                 // main2012.py                
-                "--dataset", "./data/physio_data/full2012.pkl",
+                // "--dataset", "./data/physio_data/full2012.pkl",
+                "--dataset", "./data/stock.pkl",
+
                 "--task-name", "test",
                 "--epochs", "200",
                 "--iterations","500",
-                "--log-dir","2012_result",
-                // "--fix-ae", "2012_result/test/ae.dat",
-                // "--fix-gan", "2012_result/test/generator.dat",
+                "--log-dir","stock_result/stock",
+                "--fix-ae", "stock_result/stock/ae.dat",
+                "--fix-gan", "stock_result/stock/generator.dat",
 
 
 
                 // // miss2012.py
 
-                // "--task-name","2012_result/test", // TSTR
-                "--task-name","./data/physio_data", // TRTR
-                "--impute","zero",
+                // // "--task-name","2012_result/test", // TSTR
+                // "--task-name","./data/physio_data", // TRTR
+                // "--impute","zero",
             ]
         }
     ]

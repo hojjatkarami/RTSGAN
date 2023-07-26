@@ -14,14 +14,14 @@
             "args": [
                 // main2012.py                
                 // "--dataset", "./data/physio_data/full2012.pkl",
-                "--dataset", "./data/stock.pkl",
+                "--dataset", "./data/energy.pkl",
 
-                "--task-name", "test",
-                "--epochs", "200",
-                "--iterations","500",
-                "--log-dir","stock_result/stock",
-                "--fix-ae", "stock_result/stock/ae.dat",
-                "--fix-gan", "stock_result/stock/generator.dat",
+                "--task-name", "energy_test",
+                "--epochs", "1",
+                "--iterations","1",
+                "--log-dir","energy_result/energy",
+                // "--fix-ae", "stock_result/stock/ae.dat",
+                // "--fix-gan", "stock_result/stock/generator.dat",
 
 
 

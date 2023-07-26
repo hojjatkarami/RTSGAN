@@ -8,7 +8,11 @@ def save_generated_data(generated_data, path2save, dataset="stock", seq_len=24):
     from fastNLP import DataSet
 
     data_path = "./TimeGAN/data"
-    loc = dataset
+
+    if 'stock' in dataset:
+        loc = 'stock'
+    elif 'energy' in dataset:
+        loc = 'energy'
     # seq_len = 24
     df = pd.read_csv('{}/{}_data.csv'.format(data_path, loc), sep=",")
     types = ["continuous" for i in range(len(df.columns))]

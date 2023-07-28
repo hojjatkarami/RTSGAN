@@ -17,6 +17,7 @@ import collections
 import pickle
 import argparse
 import sys
+from tqdm import tqdm
 sys.path.append('./stock_energy/')
 if True:
     from aegan import AeGAN

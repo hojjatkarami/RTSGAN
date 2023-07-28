@@ -158,7 +158,7 @@ class AeGAN:
         best_epsilon = 0
         train_batch=DataSetIter(dataset=dataset, batch_size=self.params["ae_batch_size"],sampler=RandomSampler())
         force = 1
-        for i in range(epochs):
+        for i in tqdm(range(epochs)):
             self.ae.train()
             tot_loss = 0
             con_loss = 0

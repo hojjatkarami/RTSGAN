@@ -165,7 +165,8 @@ else:
 
 logger.info("\n")
 logger.info("Generating data!")
-generated_data = syn.synthesize(len(train_set))
+generated_data = syn.synthesize(
+    len(train_set), seq_len=train_set[0]['seq_len'])
 # print(result[0], np.array(result[0]).shape)
 
 

@@ -47,6 +47,12 @@ Then train the generative model (take `Stock` dataset as an example) by
 python main_stock.py --dataset ./data/stock.pkl --task-name stock --python-seed 1374 --epochs 100 --iterations 1000
 ```
 
+- for the `data_frame_sine_normal`
+
+```
+python main_stock.py --dataset ./data/data_frame_sine_normal.pkl --log-dir "./sine_normal_result" --task-name sine_normal --python-seed 1374 --epochs 1 --iterations 1 --fix-ae "sine_normal_result/sine_normal/ae.dat" --fix-gan "sine_normal_result/sine_normal/generator.dat"
+```
+
 The generated data is stored at `../stock_results/stock/data`, and you can evaluate it according to `https://github.com/jsyoon0823/TimeGAN.git`
 
 ### Incomplete time series generation

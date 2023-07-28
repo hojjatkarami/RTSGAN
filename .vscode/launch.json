@@ -14,14 +14,14 @@
             "args": [
                 // main2012.py                
                 // "--dataset", "./data/physio_data/full2012.pkl",
-                "--dataset", "./data/energy.pkl",
+                // "--dataset", "./data/energy.pkl",
 
-                "--task-name", "energy_test",
-                "--epochs", "1",
-                "--iterations","1",
-                "--log-dir","energy_result/energy",
-                // "--fix-ae", "stock_result/stock/ae.dat",
-                // "--fix-gan", "stock_result/stock/generator.dat",
+                // "--task-name", "energy_test",
+                // "--epochs", "1",
+                // "--iterations","1",
+                // "--log-dir","energy_result/energy",
+                // // "--fix-ae", "stock_result/stock/ae.dat",
+                // // "--fix-gan", "stock_result/stock/generator.dat",
 
 
 
@@ -30,6 +30,18 @@
                 // // "--task-name","2012_result/test", // TSTR
                 // "--task-name","./data/physio_data", // TRTR
                 // "--impute","zero",
+
+
+
+                // sine
+
+                "--dataset", "./data/data_frame_sine_normal.pkl",
+                "--log-dir", "./sine_normal_result",
+                "--task-name", "sine_normal",
+                "--python-seed", "1374",
+                "--epochs", "1",
+                "--iterations", "1"
+
             ]
         }
     ]

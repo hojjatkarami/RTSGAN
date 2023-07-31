@@ -246,17 +246,17 @@ class AeGAN:
                 ))
 
             if iteration % 5 == 0:
-                table = self.save_sample_wandb()
+                table = self.save_sample_wandb(seq_len=batch_x['seq_len'][0].item())
                 wandb.log(
                 {"example_syn" : wandb.plot.line(table, "x", "y",
                     title="Example Synthesized Time Series")}, step=iteration+1)
 
         torch.save(self.generator.state_dict(), '{}/generator.dat'.format(self.params["root_dir"]))              
     
-    def save_sample_wandb(self):
+    def save_sample_wandb(self, seq_len=24):
 
 
-        x = np.array(self.synthesize(1)[0]) # (seq_len, dim)
+        x = np.array(self.synthesize(1, seq_len=seq_len)[0]) # (seq_len, dim)
         x_values = np.arange(x.shape[0])
         y_values = x[:, 0]
 

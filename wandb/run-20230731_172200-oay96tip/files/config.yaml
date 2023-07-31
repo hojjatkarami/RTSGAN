@@ -15,7 +15,13 @@ _wandb:
       - 5
       - 53
       - 55
+      2:
+      - 1
+      - 5
+      - 53
+      - 55
       3:
+      - 3
       - 13
       - 16
       - 23
@@ -24,6 +30,37 @@ _wandb:
       8:
       - 3
       - 5
+    visualize:
+      example_syn:
+        panel_config:
+          fieldSettings:
+            stroke: null
+            x: x
+            y: y
+          panelDefId: wandb/line/v0
+          stringSettings:
+            title: Example Synthesized Time Series
+          transform:
+            name: tableWithLeafColNames
+          userQuery:
+            queryFields:
+            - args:
+              - name: runSets
+                value: ${runSets}
+              fields:
+              - fields: []
+                name: id
+              - fields: []
+                name: name
+              - fields: []
+                name: _defaultColorIndex
+              - args:
+                - name: tableKey
+                  value: example_syn_table
+                fields: []
+                name: summaryTable
+              name: runSets
+        panel_type: Vega2
 ae_batch_size:
   desc: null
   value: 128

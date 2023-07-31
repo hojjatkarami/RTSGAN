@@ -136,6 +136,7 @@ data/
 2012_result/
 stock_result/
 energy_result/
+sine_normal_result/
 .vscode/
 workspace/
 ```

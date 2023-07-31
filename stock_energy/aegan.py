@@ -240,12 +240,12 @@ class AeGAN:
             self.generator_optm.step()
 
             wandb.log({"d_loss":avg_d_loss, "g_loss":g_loss.item()}, step=iteration+1 )
-            if iteration % 1000 == 999:
+            if iteration % 100 == 99:
                 self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] [%f]' % (
                     iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(), reg.item()
                 ))
 
-            if iteration % 5 == 0:
+            if iteration % 50 == 0:
                 table = self.save_sample_wandb(seq_len=batch_x['seq_len'][0].item())
                 wandb.log(
                 {"example_syn" : wandb.plot.line(table, "x", "y",

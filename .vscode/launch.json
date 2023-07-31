@@ -4,6 +4,7 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "Python: Current File",
             "type": "python",
@@ -39,8 +40,8 @@
                 "--log-dir", "./sine_normal_result",
                 "--task-name", "sine_normal",
                 "--python-seed", "1374",
-                "--epochs", "1",
-                "--iterations", "1"
+                "--epochs", "2",
+                "--iterations", "500"
 
             ]
         }

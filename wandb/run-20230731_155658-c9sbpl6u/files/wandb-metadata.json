@@ -1,0 +1,63 @@
+{
+    "os": "Windows-10-10.0.22621-SP0",
+    "python": "3.9.7",
+    "heartbeatAt": "2023-07-31T13:56:59.422187",
+    "startedAt": "2023-07-31T13:56:58.277642",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--dataset",
+        "./data/data_frame_sine_normal.pkl",
+        "--log-dir",
+        "./sine_normal_result",
+        "--task-name",
+        "sine_normal",
+        "--python-seed",
+        "1374",
+        "--epochs",
+        "1",
+        "--iterations",
+        "1"
+    ],
+    "state": "running",
+    "program": "C:\\DATA\\Tasks\\RTSGAN\\RTSGAN\\main_stock.py",
+    "codePath": "main_stock.py",
+    "git": {
+        "remote": "https://github.com/hojjatkarami/RTSGAN.git",
+        "commit": "c04c463167cd82937482eb0590ce0de4112eddf3"
+    },
+    "email": "g.hojatkarami@gmail.com",
+    "root": "C:/DATA/Tasks/RTSGAN/RTSGAN",
+    "host": "LMAMLTP16",
+    "username": "hokarami",
+    "executable": "C:\\Users\\hokarami\\Anaconda3\\envs\\paper2022\\python.exe",
+    "cpu_count": 8,
+    "cpu_count_logical": 16,
+    "cpu_freq": {
+        "current": 2304.0,
+        "min": 0.0,
+        "max": 2304.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2304.0,
+            "min": 0.0,
+            "max": 2304.0
+        }
+    ],
+    "disk": {
+        "total": 950.8818321228027,
+        "used": 917.8912162780762
+    },
+    "gpu": "Quadro T2000 with Max-Q Design",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "Quadro T2000 with Max-Q Design",
+            "memory_total": 4294967296
+        }
+    ],
+    "memory": {
+        "total": 31.750675201416016
+    }
+}

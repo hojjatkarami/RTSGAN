@@ -15,6 +15,7 @@ import random
 from torch import autograd
 import time
     
+import wandb
 class AeGAN:
     def __init__(self, processors, params):
         self.params = params
@@ -151,6 +152,7 @@ class AeGAN:
                 tot += 1
 
             tot_loss/=tot
+            wandb.log({"ae_loss":tot_loss}, step=i+1)
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}".format(i+1, time.time()-t1, (con_loss+dis_loss)/tot, con_loss/tot, dis_loss/tot))
                     
@@ -237,12 +239,36 @@ class AeGAN:
             g_loss.backward()
             self.generator_optm.step()
 
+            wandb.log({"d_loss":avg_d_loss, "g_loss":g_loss.item()}, step=iteration+1 )
             if iteration % 1000 == 999:
                 self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] [%f]' % (
                     iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(), reg.item()
                 ))
+
+            if iteration % 5 == 0:
+                table = self.save_sample_wandb()
+                wandb.log(
+                {"example_syn" : wandb.plot.line(table, "x", "y",
+                    title="Example Synthesized Time Series")}, step=iteration+1)
+
         torch.save(self.generator.state_dict(), '{}/generator.dat'.format(self.params["root_dir"]))              
     
+    def save_sample_wandb(self):
+
+
+        x = np.array(self.synthesize(1)[0]) # (seq_len, dim)
+        x_values = np.arange(x.shape[0])
+        y_values = x[:, 0]
+
+        # x_values = {"x": np.arange(x.shape[0])}
+        # y_values = { f"Line {i}": x[:,i] for i in range((x.shape[1])) }
+        # table = wandb.Table(data=y_values, columns=list(y_values.keys()))
+
+        data = [[x, y] for (x, y) in zip(x_values, y_values)]
+
+        table = wandb.Table(data=data, columns = ["x", "y"])
+        
+        return table
     def synthesize(self, n, seq_len=24, batch_size=500):
         self.ae.decoder.eval()
         self.generator.eval()

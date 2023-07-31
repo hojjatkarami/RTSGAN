@@ -1,0 +1,113 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.13.9
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.9.7
+    start_time: 1690816920.933084
+    t:
+      1:
+      - 1
+      - 5
+      - 53
+      - 55
+      3:
+      - 13
+      - 16
+      - 23
+      4: 3.9.7
+      5: 0.13.9
+      8:
+      - 3
+      - 5
+ae_batch_size:
+  desc: null
+  value: 128
+ae_lr:
+  desc: null
+  value: 0.001
+d_update:
+  desc: null
+  value: 5
+dataset:
+  desc: null
+  value: ./data/data_frame_sine_normal.pkl
+debug:
+  desc: null
+  value: false
+devi:
+  desc: null
+  value: '0'
+device:
+  desc: null
+  value: cuda:0
+dropout:
+  desc: null
+  value: 0.0
+dynamic_processor:
+  desc: null
+  value: <stock_energy.missingprocessor.Processor object at 0x0000020A17A78460>
+embed_dim:
+  desc: null
+  value: 96
+epochs:
+  desc: null
+  value: 2
+eval_ae:
+  desc: null
+  value: false
+fix_ae:
+  desc: null
+  value: null
+fix_gan:
+  desc: null
+  value: null
+gan_alpha:
+  desc: null
+  value: 0.99
+gan_batch_size:
+  desc: null
+  value: 512
+gan_lr:
+  desc: null
+  value: 0.0001
+hidden_dim:
+  desc: null
+  value: 24
+iterations:
+  desc: null
+  value: 500
+layers:
+  desc: null
+  value: 3
+log_dir:
+  desc: null
+  value: ./sine_normal_result
+logger:
+  desc: null
+  value: <RootLogger root (INFO)>
+noise_dim:
+  desc: null
+  value: 96
+python_seed:
+  desc: null
+  value: 1374
+root_dir:
+  desc: null
+  value: ./sine_normal_result/sine_normal
+scale:
+  desc: null
+  value: 1
+static_processor:
+  desc: null
+  value: <stock_energy.missingprocessor.Processor object at 0x0000020A17A7F070>
+task_name:
+  desc: null
+  value: sine_normal
+weight_decay:
+  desc: null
+  value: 0

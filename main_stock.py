@@ -2,6 +2,8 @@
 # Licensed under the MIT License.
 
 
+from dotenv import load_dotenv
+import wandb
 from hk_utils import save_generated_data
 from utils.general import init_logger, make_sure_path_exists
 import torch.nn as nn
@@ -23,6 +25,10 @@ if True:
     from aegan import AeGAN
 
 DEBUG_SCALE = 512
+
+
+load_dotenv()
+wandb.login(key=os.getenv("WANDB_KEY"))
 
 # ===-----------------------------------------------------------------------===
 # Argument parsing
@@ -131,6 +137,17 @@ params["device"] = device
 print(params.keys())
 
 syn = AeGAN((static_processor, dynamic_processor), params)
+wandb.init(config=syn.params,
+                       project='RTSGAN',
+                       entity="hokarami",
+                    #    group=opt.user_prefix,
+                       name=syn.params['task_name'],
+                       reinit=True,
+                    #    tags=[opt.wandb_tag],
+                       # settings=wandb.Settings(start_method="fork")
+                       )
+
+
 # Count the number of parameters in the model
 print(
     f"Total number of parameters in the AE: { sum(p.numel() for p in syn.ae.parameters())}")
@@ -154,7 +171,15 @@ if options.fix_ae is not None:
     syn.load_ae(options.fix_ae)
 else:
     syn.train_ae(train_set, options.epochs)
+    wandb.save( '{}/ae.dat'.format(syn.params["root_dir"]))
+
 res, h = syn.eval_ae(train_set)
+
+
+
+
+
+
 with open("{}/train_hidden".format(root_dir), "wb") as f:
     pickle.dump(h, f)
 

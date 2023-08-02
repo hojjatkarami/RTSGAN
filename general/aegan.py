@@ -359,9 +359,9 @@ class AeGAN:
         # table = wandb.Table(data=data, columns=["x", "y"])
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=x_values, y=dyn[0].S1.values, mode='markers', name='S1'))
+            x=x_values, y=dyn[0].S1.values, mode='lines+markers', name='S1'))
         fig.add_trace(go.Scatter(
-            x=x_values, y=dyn[0].S2.values, mode='markers', name='S2'))
+            x=x_values, y=dyn[0].S2.values, mode='lines+markers', name='S2'))
 
         plot = wandb.Plotly(fig)
         return plot

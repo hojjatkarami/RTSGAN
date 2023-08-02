@@ -36,12 +36,22 @@
 
                 // sine
 
-                "--dataset", "./data/data_frame_sine_normal.pkl",
-                "--log-dir", "./sine_normal_result",
-                "--task-name", "sine_normal",
+                // "--dataset", "./data/data_frame_sine_normal.pkl",
+                // "--log-dir", "./sine_normal_result",
+                // "--task-name", "sine_normal",
+                // "--python-seed", "1374",
+                // "--epochs", "2",
+                // "--iterations", "500"
+
+
+                // syn irregular
+
+                "--dataset", "./data/physio_data/syn1.pkl",
+                "--log-dir", "./sine_irr_result",
+                "--task-name", "syn1",
                 "--python-seed", "1374",
-                "--epochs", "2",
-                "--iterations", "500"
+                "--epochs", "5",
+                "--iterations", "5000"
 
             ]
         }

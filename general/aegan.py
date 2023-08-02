@@ -17,6 +17,10 @@ import time
 
 from tqdm import tqdm
 
+import wandb
+import plotly.express as px
+import plotly.graph_objects as go
+
 
 class AeGAN:
     def __init__(self, processors, params):
@@ -154,7 +158,7 @@ class AeGAN:
             [model.threshold for model in self.dynamic_processor.models if model.missing]).to(data.device)
         thr = thr.unsqueeze(0).unsqueeze(0)  # 1, 1, 35
 
-        scale = thr * target + (1 - thr) * (1 - target)  # data.shape
+        scale = thr * target + (1 - thr) * (1 - target)  # [bs, seq_len, 35]
         # BCE loss with red=none with data.shape
         loss = self.loss_mis(data, target) * scale
         seq_mask = seq_len_to_mask(seq_len)  # batch_size, seq_len
@@ -164,7 +168,8 @@ class AeGAN:
         # batch_size, 35 which features are available during the whole sequence
         gold_mx, _ = torch.max(target, dim=1)
         loss1 = self.loss_mis(mx, gold_mx)  # batch_size, 35
-        return torch.mean(loss) + torch.mean(torch.masked_select(loss1, gold_mx == 0))
+        # + torch.mean(torch.masked_select(loss1, gold_mx == 0))
+        return torch.mean(loss)
 
     def train_ae(self, dataset, epochs=800):
         min_loss = 1e15
@@ -203,6 +208,7 @@ class AeGAN:
 
                 out_sta, out_dyn, missing, gt = self.ae(
                     sta, dyn, lag, mask, priv, nex, times, seq_len, forcing=force)
+                # [bs, max_len, n_features], [bs, max_len, n_features], [bs]
                 loss3 = self.missing_loss(missing, mask, seq_len)
                 miss_loss1 += loss3.item()
                 loss4 = self.time_loss(gt, times, seq_len)
@@ -229,6 +235,8 @@ class AeGAN:
                 tot += 1
 
             tot_loss /= tot
+            wandb.log({"ae_loss": tot_loss}, step=i+1)
+
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}\t{}\t{}".format(
                     i+1, time.time()-t1, force, con_loss/tot, dis_loss/tot, miss_loss1/tot, miss_loss2/tot))
@@ -322,12 +330,36 @@ class AeGAN:
             g_loss.backward()
             self.generator_optm.step()
 
+            wandb.log({"d_loss": avg_d_loss, "g_loss": g_loss.item()},
+                      step=iteration+1)
             if iteration % 50 == 49:
                 self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] [%f]' % (
                     iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(), reg.item()
                 ))
+
+            if iteration % 50 == 0:
+                # table = self.save_sample_wandb()
+                # wandb.log(
+                #     {"example_syn": wandb.plot.line(table, "t", "y",
+                #                                     title="Example Synthesized Time Series")}, step=iteration+1)
+                plot = self.save_sample_wandb()
+                wandb.log(
+                    {"example_syn": plot}, step=iteration+1)
+
         torch.save(self.generator.state_dict(),
                    '{}/generator.dat'.format(self.params["root_dir"]))
+
+    def save_sample_wandb(self):
+        sta, dyn = self.synthesize(1)
+        x_values = dyn[0].time.values
+        y_values = dyn[0].S1.values
+
+        data = [[x, y] for (x, y) in zip(x_values, y_values)]
+
+        table = wandb.Table(data=data, columns=["x", "y"])
+        fig = go.Figure(data=go.Scatter(x=x_values, y=y_values))
+        plot = wandb.Plotly(fig)
+        return plot
 
     def wgan_gp_reg(self, x_real, x_fake, center=1.):
         batch_size = x_real.size(0)

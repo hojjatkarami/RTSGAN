@@ -354,10 +354,15 @@ class AeGAN:
         x_values = dyn[0].time.values
         y_values = dyn[0].S1.values
 
-        data = [[x, y] for (x, y) in zip(x_values, y_values)]
+        # data = [[x, y] for (x, y) in zip(x_values, y_values)]
 
-        table = wandb.Table(data=data, columns=["x", "y"])
-        fig = go.Figure(data=go.Scatter(x=x_values, y=y_values))
+        # table = wandb.Table(data=data, columns=["x", "y"])
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=x_values, y=dyn[0].S1.values, mode='markers'))
+        fig.add_trace(go.Scatter(
+            x=x_values, y=dyn[0].S2.values, mode='markers'))
+
         plot = wandb.Plotly(fig)
         return plot
 

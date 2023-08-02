@@ -48,7 +48,7 @@
 
                 "--dataset", "./data/physio_data/syn1.pkl",
                 "--log-dir", "./sine_irr_result",
-                "--task-name", "syn1",
+                "--task-name", "syn_test",
                 "--python-seed", "1374",
                 "--epochs", "5",
                 "--iterations", "5000"

@@ -43,15 +43,23 @@
                 // "--epochs", "2",
                 // "--iterations", "500"
 
+                "--dataset", "./data/data_frame_sine_normal.pkl",
+                "--log-dir", "./sine_normal_result",
+                "--task-name", "sine_normal_test",
+                "--python-seed", "1374",
+                "--epochs", "50",
+                "--iterations", "1000",
+                // "--fix-ae", "sine_normal_result/sine_normal/ae.dat",
+                "--gan-lr", "1e-3"
 
                 // syn irregular
 
-                "--dataset", "./data/physio_data/syn1.pkl",
-                "--log-dir", "./sine_irr_result",
-                "--task-name", "syn_test",
-                "--python-seed", "1374",
-                "--epochs", "5",
-                "--iterations", "5000"
+                // "--dataset", "./data/physio_data/syn1.pkl",
+                // "--log-dir", "./sine_irr_result",
+                // "--task-name", "syn_test",
+                // "--python-seed", "1374",
+                // "--epochs", "5",
+                // "--iterations", "5000"
 
             ]
         }

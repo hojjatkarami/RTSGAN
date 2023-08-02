@@ -171,7 +171,27 @@ class AeGAN:
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}".format(
                     i+1, time.time()-t1, (con_loss+dis_loss)/tot, con_loss/tot, dis_loss/tot))
+            if i % 5 == 0:
 
+                # out_dyn [bs, seq_len, dim]
+                x_values = np.arange(out_dyn.shape[1])
+                y_values = out_dyn[0, :, 0]
+
+                fig = go.Figure()
+
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=dyn[0, :, 0].cpu().detach().numpy(), mode='lines+markers', name='S1'))
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=out_dyn[0, :, 0].cpu().detach().numpy(), mode='lines+markers', name='S1-rec'))
+
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=dyn[0, :, 1].cpu().detach().numpy(), mode='lines+markers', name='S2'))
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=out_dyn[0, :, 1].cpu().detach().numpy(), mode='lines+markers', name='S2-rec'))
+
+                plot = wandb.Plotly(fig)
+                wandb.log(
+                    {"example_rec": plot}, step=i+1)
         torch.save(self.ae.state_dict(),
                    '{}/ae.dat'.format(self.params["root_dir"]))
 

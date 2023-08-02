@@ -171,6 +171,36 @@ class AeGAN:
         # + torch.mean(torch.masked_select(loss1, gold_mx == 0))
         return torch.mean(loss)
 
+    def plot_ae(self, dyn, mask, out_dyn, missing, i):
+
+        def render(dyn, mask, i_channel):
+            x_values = torch.masked_select(torch.arange(
+                out_dyn.shape[1], device=mask.device), mask[0, :, i_channel] == 1)
+            y_values = torch.masked_select(
+                dyn[0, :, i_channel], mask[0, :, 0] == 1)
+
+            return x_values.cpu().detach().numpy(), y_values.cpu().detach().numpy()
+
+        fig = go.Figure()
+        x_values, y_values = render(dyn, mask, 0)
+        fig.add_trace(go.Scatter(
+            x=x_values, y=y_values, mode='lines+markers', name='S1'))
+        x_values, y_values = render(dyn, mask, 1)
+        fig.add_trace(go.Scatter(
+            x=x_values, y=y_values, mode='lines+markers', name='S2'))
+        x_values, y_values = render(out_dyn, missing, 0)
+        fig.add_trace(go.Scatter(
+            x=x_values, y=y_values, mode='lines+markers', name='S1_rec'))
+        x_values, y_values = render(out_dyn, missing, 1)
+        fig.add_trace(go.Scatter(
+            x=x_values, y=y_values, mode='lines+markers', name='S2_rec'))
+
+        plot = wandb.Plotly(fig)
+        wandb.log(
+            {"example_rec": plot}, step=i+1)
+
+        return
+
     def train_ae(self, dataset, epochs=800):
         min_loss = 1e15
         best_epsilon = 0
@@ -240,7 +270,14 @@ class AeGAN:
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}\t{}\t{}".format(
                     i+1, time.time()-t1, force, con_loss/tot, dis_loss/tot, miss_loss1/tot, miss_loss2/tot))
+            if (i+1) % 5 == 0:
+                self.plot_ae(dyn, mask, out_dyn, missing, i)
 
+                x_values = torch.masked_select(torch.arange(
+                    out_dyn.shape[1], device=mask.device), mask[0, :, 0] == 1)
+                y_values = torch.masked_select(
+                    dyn[0, :, 0], mask[0, :, 0] == 1)
+                # times [bs, max_len, 1], dyn [bs, max_len, n_features], out_dyn [bs, max_len, n_features]
             if i % 100 == 99:
                 torch.save(self.ae.state_dict(),
                            '{}/ae{}.dat'.format(self.params["root_dir"], i))

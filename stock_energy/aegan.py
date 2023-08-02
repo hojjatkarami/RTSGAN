@@ -137,6 +137,29 @@ class AeGAN:
         loss = torch.masked_select(loss, mask.unsqueeze(-1))
         return torch.mean(loss)
 
+    def plot_ae(dyn, out_dyn, i):
+
+        x_values = np.arange(out_dyn.shape[1])
+        y_values = out_dyn[0, :, 0]
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter(
+            x=x_values, y=dyn[0, :, 0].cpu().detach().numpy(), mode='lines+markers', name='S1'))
+        fig.add_trace(go.Scatter(
+            x=x_values, y=out_dyn[0, :, 0].cpu().detach().numpy(), mode='lines+markers', name='S1-rec'))
+
+        fig.add_trace(go.Scatter(
+            x=x_values, y=dyn[0, :, 1].cpu().detach().numpy(), mode='lines+markers', name='S2'))
+        fig.add_trace(go.Scatter(
+            x=x_values, y=out_dyn[0, :, 1].cpu().detach().numpy(), mode='lines+markers', name='S2-rec'))
+
+        plot = wandb.Plotly(fig)
+        wandb.log(
+            {"example_rec": plot}, step=i+1)
+
+        return
+
     def train_ae(self, dataset, epochs=1000):
         min_loss = 1e15
         best_epsilon = 0
@@ -171,7 +194,8 @@ class AeGAN:
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}".format(
                     i+1, time.time()-t1, (con_loss+dis_loss)/tot, con_loss/tot, dis_loss/tot))
-            if i % 5 == 0:
+            if (i+1) % 5 == 0:
+                self.plot_ae(dyn, out_dyn, i)
 
                 # out_dyn [bs, seq_len, dim]
                 x_values = np.arange(out_dyn.shape[1])

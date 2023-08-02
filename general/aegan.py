@@ -188,10 +188,10 @@ class AeGAN:
         x_values, y_values = render(dyn, mask, 1)
         fig.add_trace(go.Scatter(
             x=x_values, y=y_values, mode='lines+markers', name='S2'))
-        x_values, y_values = render(out_dyn, missing, 0)
+        x_values, y_values = render(out_dyn, missing > 0.5, 0)
         fig.add_trace(go.Scatter(
             x=x_values, y=y_values, mode='lines+markers', name='S1_rec'))
-        x_values, y_values = render(out_dyn, missing, 1)
+        x_values, y_values = render(out_dyn, missing > 0.5, 1)
         fig.add_trace(go.Scatter(
             x=x_values, y=y_values, mode='lines+markers', name='S2_rec'))
 

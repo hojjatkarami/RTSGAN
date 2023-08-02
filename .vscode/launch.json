@@ -58,7 +58,7 @@
                 "--log-dir", "./sine_irr_result",
                 "--task-name", "syn_test",
                 "--python-seed", "1374",
-                "--epochs", "5",
+                "--epochs", "15",
                 "--iterations", "5000"
 
             ]

@@ -316,8 +316,8 @@ class AeGAN:
         torch.save(self.generator.state_dict(),
                    '{}/generator.dat'.format(self.params["root_dir"]))
 
-    def train_gan2(self, dataset, iterations=15000, d_update=1):
-        d_update = 1
+    def train_gan2(self, dataset, iterations=15000, d_update=5):
+        # d_update = 1
         self.discriminator.train()
         self.generator.train()
         self.ae.train()

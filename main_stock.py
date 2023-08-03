@@ -182,7 +182,7 @@ with open("{}/train_hidden".format(root_dir), "wb") as f:
 if options.fix_gan is not None:
     syn.load_generator(options.fix_gan)
 else:
-    syn.train_gan(train_set, options.iterations, options.d_update)
+    syn.train_gan2(train_set, options.iterations, options.d_update)
 
 logger.info("\n")
 logger.info("Generating data!")

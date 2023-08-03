@@ -49,7 +49,7 @@
                 "--python-seed", "1374",
                 "--epochs", "100",
                 "--iterations", "1000",
-                // "--fix-ae", "sine_normal_result/sine_normal/ae.dat",
+                "--fix-ae", "sine_normal_result/sine_normal/ae.dat",
                 "--gan-lr", "1e-3"
 
                 // syn irregular

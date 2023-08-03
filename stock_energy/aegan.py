@@ -196,7 +196,7 @@ class AeGAN:
                 tot += 1
 
             tot_loss /= tot
-            wandb.log({"ae_loss": tot_loss}, step=i+1)
+            wandb.log({"ae_loss": tot_loss}, step=i)
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}".format(
                     i+1, time.time()-t1, (con_loss+dis_loss)/tot, con_loss/tot, dis_loss/tot))
@@ -217,7 +217,7 @@ class AeGAN:
         batch = DataSetIter(
             dataset=dataset, batch_size=batch_size, sampler=RandomSampler())
         min_loss = 1e15
-        for iteration in range(iterations):
+        for iteration in tqdm(range(iterations)):
             avg_d_loss = 0
             t1 = time.time()
 
@@ -298,6 +298,131 @@ class AeGAN:
             if iteration % 100 == 99:
                 self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] [%f]' % (
                     iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(), reg.item()
+                ))
+
+            if (iteration+1) % 50 == 0:
+                # plot one generated sample
+                plot = self.save_sample_wandb(
+                    seq_len=batch_x['seq_len'][0].item())
+                wandb.log(
+                    {"example_syn": plot}, step=iteration+1)
+
+                # plot t-SNE of latent space
+                plot = self.plot_tsne(real_rep.cpu().detach(
+                ).numpy(), x_fake.cpu().detach().numpy())
+                wandb.log(
+                    {"tsne": plot}, step=iteration+1)
+
+        torch.save(self.generator.state_dict(),
+                   '{}/generator.dat'.format(self.params["root_dir"]))
+
+    def train_gan2(self, dataset, iterations=15000, d_update=1):
+        d_update = 1
+        self.discriminator.train()
+        self.generator.train()
+        self.ae.train()
+        batch_size = self.params["gan_batch_size"]
+        idxs = list(range(len(dataset)))
+        batch = DataSetIter(
+            dataset=dataset, batch_size=batch_size, sampler=RandomSampler())
+        min_loss = 1e15
+        for iteration in tqdm(range(iterations)):
+            avg_d_loss = 0
+            t1 = time.time()
+
+            toggle_grad(self.generator, False)
+            toggle_grad(self.discriminator, True)
+            self.generator.train()
+            self.discriminator.train()
+            bce_loss = nn.BCEWithLogitsLoss(reduce=None).to(self.device)
+
+            for j in range(d_update):
+                for batch_x, batch_y in batch:
+                    self.discriminator_optm.zero_grad()
+                    z = torch.randn(
+                        batch_size, self.params['noise_dim']).to(self.device)  # [bs, noise_dim]
+
+                    sta = None
+                    dyn = batch_x["dyn"].to(self.device)
+                    seq_len = batch_x["seq_len"].to(self.device)
+                    real_rep = self.ae.encoder(
+                        sta, dyn, seq_len)  # [bs, hidden_dim]
+                    d_real = self.discriminator(real_rep)
+
+                    # # On fake data
+                    # with torch.no_grad():
+                    x_fake = self.generator(z)  # [bs, hidden_dim]
+
+                    # x_fake.requires_grad_()
+                    d_fake = self.discriminator(x_fake.detach())
+
+                    # output = torch.concat((d_real, d_fake), 0)
+                    # target = torch.concat((torch.ones_like(d_real), torch.zeros_like(d_fake)), 0)
+                    # disc_loss = bce_loss(output, target)
+
+                    # --- Train the Discriminator ---
+                    # Compute the Discriminator's loss on real data
+                    # outputs = discriminator(images)
+                    real_labels = torch.ones_like(d_real)
+                    d_loss_real = bce_loss(d_real, real_labels)
+
+                    # Train the Discriminator with fake data
+                    # noise = generate_noise(batch_size, latent_size)
+                    # fake_images = generator(noise)
+                    # outputs = discriminator(fake_images.detach())  # Detach to avoid computing gradients for the Generator
+                    fake_labels = torch.zeros_like(d_fake)
+                    d_loss_fake = bce_loss(d_fake, fake_labels)
+                    # Backpropagation and optimization for Discriminator
+                    disc_loss = d_loss_real + d_loss_fake
+                    disc_loss.backward()
+
+                    # reg = 10 * self.wgan_gp_reg(real_rep, x_fake)
+                    # reg.backward()
+
+                    self.discriminator_optm.step()
+                    avg_d_loss += disc_loss.item()
+                    break
+
+            avg_d_loss /= d_update
+
+            # --- Train the Generator ---
+            # Generate fake images and use the Discriminator to get its decision (output)
+            z = torch.randn(
+                batch_size, self.params['noise_dim']).to(self.device)
+            x_fake = self.generator(z)
+            d_fake = self.discriminator(x_fake)
+
+            # Generator's loss
+            g_loss = bce_loss(d_fake, real_labels)
+
+            # Backpropagation and optimization for Generator
+            self.generator.zero_grad()
+            g_loss.backward()
+            self.generator_optm.step()
+
+            # toggle_grad(self.generator, True)
+            # toggle_grad(self.discriminator, False)
+            # self.generator.train()
+            # self.discriminator.train()
+            # self.generator_optm.zero_grad()
+            # z = torch.randn(
+            #     batch_size, self.params['noise_dim']).to(self.device)
+            # fake = self.generator(z)  # [bs, hidden_dim]
+            # g_loss = -torch.mean(self.discriminator(fake))
+            """
+            d_fake = self.discriminator(fake)
+            y = d_fake.new_full(size=d_fake.size(), fill_value=1)
+            g_loss = F.binary_cross_entropy_with_logits(d_fake, y)
+            """
+            # g_loss.backward()
+            # self.generator_optm.step()
+
+            wandb.log({"d_loss": avg_d_loss, "g_loss": g_loss.item()},
+                      step=iteration+1)
+            if iteration % 100 == 99:
+                self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] ' % (
+                    iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(),
+
                 ))
 
             if (iteration+1) % 50 == 0:

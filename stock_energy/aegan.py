@@ -381,6 +381,10 @@ class AeGAN:
 
                     self.discriminator_optm.step()
                     avg_d_loss += disc_loss.item()
+
+                    reg = 10 * self.wgan_gp_reg(real_rep, x_fake)
+                    reg.backward()
+
                     break
 
             avg_d_loss /= d_update

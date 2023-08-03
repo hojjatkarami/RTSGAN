@@ -179,8 +179,8 @@ else:
 # res, h = syn.eval_ae(train_set)
 
 
-with open("{}/train_hidden".format(root_dir), "wb") as f:
-    pickle.dump(h, f)
+# with open("{}/train_hidden".format(root_dir), "wb") as f:
+#     pickle.dump(h, f)
 
 if options.fix_gan is not None:
     syn.load_generator(options.fix_gan)

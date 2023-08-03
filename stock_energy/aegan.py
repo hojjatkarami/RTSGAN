@@ -398,8 +398,14 @@ class AeGAN:
                     sta = None
                     dyn = batch_x["dyn"].to(self.device)
                     seq_len = batch_x["seq_len"].to(self.device)
-                    real_rep = self.ae.encoder(
+                    out = self.ae.encoder(
                         sta, dyn, seq_len)  # [bs, hidden_dim]
+                    if isinstance(out, tuple):
+                        mu, logvar = out
+                        real_rep = self.ae.reparameterize(mu, logvar)
+                    else:
+                        real_rep = out
+
                     d_real = self.discriminator(real_rep)
 
                     # # On fake data

@@ -138,14 +138,14 @@ print(params.keys())
 
 syn = AeGAN((static_processor, dynamic_processor), params)
 wandb.init(config=syn.params,
-                       project='RTSGAN',
-                       entity="hokarami",
-                    #    group=opt.user_prefix,
-                       name=syn.params['task_name'],
-                       reinit=True,
-                    #    tags=[opt.wandb_tag],
-                       # settings=wandb.Settings(start_method="fork")
-                       )
+           project='RTSGAN',
+           entity="hokarami",
+           #    group=opt.user_prefix,
+           name=syn.params['task_name'],
+           reinit=True,
+           #    tags=[opt.wandb_tag],
+           # settings=wandb.Settings(start_method="fork")
+           )
 
 
 # Count the number of parameters in the model
@@ -171,13 +171,9 @@ if options.fix_ae is not None:
     syn.load_ae(options.fix_ae)
 else:
     syn.train_ae(train_set, options.epochs)
-    wandb.save( '{}/ae.dat'.format(syn.params["root_dir"]))
+    wandb.save('{}/ae.dat'.format(syn.params["root_dir"]))
 
 res, h = syn.eval_ae(train_set)
-
-
-
-
 
 
 with open("{}/train_hidden".format(root_dir), "wb") as f:

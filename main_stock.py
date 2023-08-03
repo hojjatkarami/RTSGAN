@@ -34,6 +34,9 @@ wandb.login(key=os.getenv("WANDB_KEY"))
 # Argument parsing
 # ===-----------------------------------------------------------------------===
 parser = argparse.ArgumentParser()
+
+parser.add_argument("--vae", default=False, dest="vae", action="store_true",)
+
 parser.add_argument("--dataset", required=True,
                     dest="dataset", help=".pkl file to use")
 parser.add_argument("--devi", default="0", dest="devi", help="gpu")
@@ -170,7 +173,7 @@ if options.eval_ae:
 if options.fix_ae is not None:
     syn.load_ae(options.fix_ae)
 else:
-    syn.train_ae(train_set, options.epochs)
+    syn.train_ae2(train_set, options.epochs)
     wandb.save('{}/ae.dat'.format(syn.params["root_dir"]))
 
 res, h = syn.eval_ae(train_set)

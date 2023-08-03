@@ -9,7 +9,7 @@ import numpy as np
 from fastNLP import DataSet, DataSetIter, RandomSampler, SequentialSampler
 from fastNLP import seq_len_to_mask
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, LabelBinarizer
-from autoencoder import Autoencoder
+from autoencoder import Autoencoder, VariationalAutoencoder
 from gan import Generator, Discriminator
 import random
 from torch import autograd
@@ -28,9 +28,12 @@ class AeGAN:
         self.device = params["device"]
         self.logger = params["logger"]
         self.static_processor, self.dynamic_processor = processors
-
-        self.ae = Autoencoder(
-            processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"])
+        if params["vae"]:
+            self.ae = VariationalAutoencoder(
+                processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"])
+        else:
+            self.ae = Autoencoder(
+                processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"])
         self.ae.to(self.device)
         """
         self.decoder_optm = torch.optim.Adam(
@@ -316,11 +319,61 @@ class AeGAN:
         torch.save(self.generator.state_dict(),
                    '{}/generator.dat'.format(self.params["root_dir"]))
 
+    def train_ae2(self, dataset, epochs=1000):
+        min_loss = 1e15
+        best_epsilon = 0
+        train_batch = DataSetIter(
+            dataset=dataset, batch_size=self.params["ae_batch_size"], sampler=RandomSampler())
+        for i in tqdm(range(epochs)):
+            if i > 0:
+                self.ae.train()
+            else:
+                self.ae.eval()
+            tot_loss = 0
+            con_loss = 0
+            dis_loss = 0
+            KLD_loss = 0
+            tot = 0
+            t1 = time.time()
+            for batch_x, batch_y in train_batch:
+                self.ae.zero_grad()
+                sta = None
+                dyn = batch_x["dyn"].to(self.device)
+                seq_len = batch_x["seq_len"].to(self.device)
+                out_sta, out_dyn = self.ae(sta, dyn, seq_len)
+                loss1 = 0  # self.sta_loss(out_sta, sta)
+                loss2 = self.dyn_loss(out_dyn, dyn, seq_len)
+
+                loss = loss2 + self.ae.KLD
+                if i > 0:
+                    loss.backward()
+                    self.ae_optm.step()
+
+                tot_loss += loss.item()
+                con_loss += 0  # loss1.item()
+                dis_loss += loss2.item()
+                KLD_loss += self.ae.KLD.item()
+                tot += 1
+
+            tot_loss /= tot
+            wandb.log({"ae_loss": tot_loss, "KLD loss": KLD_loss/tot}, step=i)
+            if i % 5 == 0:
+                self.logger.info("Epoch:{} {}\t{}\t{}\t{}".format(
+                    i+1, time.time()-t1, (con_loss+dis_loss)/tot, con_loss/tot, dis_loss/tot))
+            if i % 10 == 0:
+                plot = self.plot_ae(dyn, out_dyn, i)
+
+                wandb.log(
+                    {"example_rec": plot}, step=i)
+        torch.save(self.ae.state_dict(),
+                   '{}/ae.dat'.format(self.params["root_dir"]))
+
     def train_gan2(self, dataset, iterations=15000, d_update=5):
         # d_update = 1
         self.discriminator.train()
         self.generator.train()
         self.ae.train()
+        toggle_grad(self.ae, False)
         batch_size = self.params["gan_batch_size"]
         idxs = list(range(len(dataset)))
         batch = DataSetIter(
@@ -334,7 +387,7 @@ class AeGAN:
             toggle_grad(self.discriminator, True)
             self.generator.train()
             self.discriminator.train()
-            bce_loss = nn.BCEWithLogitsLoss(reduce=None).to(self.device)
+            bce_loss = nn.BCEWithLogitsLoss().to(self.device)
 
             for j in range(d_update):
                 for batch_x, batch_y in batch:
@@ -373,7 +426,7 @@ class AeGAN:
                     fake_labels = torch.zeros_like(d_fake)
                     d_loss_fake = bce_loss(d_fake, fake_labels)
                     # Backpropagation and optimization for Discriminator
-                    disc_loss = d_loss_real + d_loss_fake
+                    disc_loss = (d_loss_real + d_loss_fake)/2
                     disc_loss.backward()
 
                     # reg = 10 * self.wgan_gp_reg(real_rep, x_fake)
@@ -400,7 +453,8 @@ class AeGAN:
 
             # Generator's loss
             g_loss = bce_loss(d_fake, real_labels)
-
+            g_loss2 = bce_loss(d_fake, fake_labels) + \
+                bce_loss(d_real, real_labels)
             # Backpropagation and optimization for Generator
             self.generator.zero_grad()
             g_loss.backward()
@@ -423,7 +477,7 @@ class AeGAN:
             # g_loss.backward()
             # self.generator_optm.step()
 
-            wandb.log({"d_loss": avg_d_loss, "g_loss": g_loss.item()},
+            wandb.log({"d_loss": avg_d_loss, "g_loss": g_loss.item(), "g_loss2": g_loss2.item()},
                       step=iteration+1)
             if iteration % 100 == 99:
                 self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] ' % (

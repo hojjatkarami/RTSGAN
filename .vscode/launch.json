@@ -13,7 +13,7 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [
-                // main2012.py                
+                // main2012.py
                 // "--dataset", "./data/physio_data/full2012.pkl",
                 // "--dataset", "./data/energy.pkl",
 
@@ -45,12 +45,13 @@
 
                 "--dataset", "./data/data_frame_sine_normal.pkl",
                 "--log-dir", "./sine_normal_result",
-                "--task-name", "sine_normal_test1",
+                "--task-name", "sine_normal_vae",
                 "--python-seed", "1374",
                 "--epochs", "100",
                 "--iterations", "1000",
-                "--fix-ae", "sine_normal_result/sine_normal/ae.dat",
-                "--gan-lr", "1e-3"
+                // "--fix-ae", "sine_normal_result/sine_normal/ae.dat",
+                "--gan-lr", "1e-3",
+                "--vae",
 
                 // syn irregular
 

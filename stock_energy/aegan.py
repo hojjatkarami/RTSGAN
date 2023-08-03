@@ -391,6 +391,8 @@ class AeGAN:
 
             # --- Train the Generator ---
             # Generate fake images and use the Discriminator to get its decision (output)
+            toggle_grad(self.generator, True)
+            toggle_grad(self.discriminator, False)
             z = torch.randn(
                 batch_size, self.params['noise_dim']).to(self.device)
             x_fake = self.generator(z)

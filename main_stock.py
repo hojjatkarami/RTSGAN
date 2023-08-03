@@ -176,7 +176,7 @@ else:
     syn.train_ae2(train_set, options.epochs)
     wandb.save('{}/ae.dat'.format(syn.params["root_dir"]))
 
-res, h = syn.eval_ae(train_set)
+# res, h = syn.eval_ae(train_set)
 
 
 with open("{}/train_hidden".format(root_dir), "wb") as f:

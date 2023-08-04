@@ -608,10 +608,10 @@ class AeGAN:
         def _gen(n):
             with torch.no_grad():
                 z = torch.randn(n, self.params['noise_dim']).to(self.device)
-                if from_generator:
-                    hidden = self.generator(z)
-                else:
+                hidden = self.generator(z)
+                if from_generator == False:
                     hidden = torch.randn_like(hidden)
+
                 dynamics = self.ae.decoder.generate_dynamics(hidden, seq_len)
             res = []
             for i in range(n):

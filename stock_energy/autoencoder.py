@@ -109,7 +109,9 @@ def apply_activation(processors, x):
                 data.append(torch.sigmoid(x[:, ed-1:ed]))
             st = ed
         else:
-            data.append(torch.sigmoid(x[:, st:ed]))
+            # data.append(torch.sigmoid(x[:, st:ed]))
+            # applying no activation to the last layer
+            data.append(x[:, ed-1:ed])
             st = ed
 
     return torch.cat(data, dim=-1)

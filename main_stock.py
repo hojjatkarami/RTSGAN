@@ -173,7 +173,10 @@ if options.eval_ae:
 if options.fix_ae is not None:
     syn.load_ae(options.fix_ae)
 else:
-    syn.train_ae2(train_set, options.epochs)
+    if options.vae:
+        syn.train_ae2(train_set, options.epochs)
+    else:
+        syn.train_ae(train_set, options.epochs)
     wandb.save('{}/ae.dat'.format(syn.params["root_dir"]))
 
 # res, h = syn.eval_ae(train_set)

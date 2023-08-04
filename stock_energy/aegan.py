@@ -205,10 +205,22 @@ class AeGAN:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}".format(
                     i+1, time.time()-t1, (con_loss+dis_loss)/tot, con_loss/tot, dis_loss/tot))
             if i % 10 == 0:
-                plot = self.plot_ae(dyn, out_dyn, i)
+                plot_AE_rec = self.plot_ae(dyn, out_dyn, i)
 
+            #    # plot t-SNE
+            #     tsne = TSNE(n_components=2, perplexity=30,
+            #                 learning_rate=10, n_jobs=4)
+            #     real_rep = self.ae.encoder(
+            #         sta, dyn, seq_len)  # [bs, hidden_dim]
+            #     X = real_rep.cpu().detach().numpy()  # [bs, hidden_dim]
+            #     X_tsne = tsne.fit_transform(X)  # [2*bs, 2]
+            #     fig = go.Figure()
+            #     fig.add_trace(go.Scatter(
+            #         x=X_tsne[:, 0], y=X_tsne[:, 1], mode='markers', name='real'))
+
+            #     plot_tsne = wandb.Plotly(fig)
                 wandb.log(
-                    {"example_rec": plot}, step=i)
+                    {"example_rec": plot_AE_rec}, step=i)
         torch.save(self.ae.state_dict(),
                    '{}/ae.dat'.format(self.params["root_dir"]))
 
@@ -378,9 +390,6 @@ class AeGAN:
 
                 plot_AE_rec = wandb.Plotly(fig)
 
-                # plot t-SNE
-                tsne = TSNE(n_components=2, perplexity=30,
-                            learning_rate=10, n_jobs=4)
                 out = self.ae.encoder(
                     sta, dyn, seq_len)  # [bs, hidden_dim]
                 if isinstance(out, tuple):
@@ -406,6 +415,9 @@ class AeGAN:
                         {"example_AE_syn": plot_AE_syn}, step=i)
                 else:
                     real_rep = out
+                # plot t-SNE
+                tsne = TSNE(n_components=2, perplexity=30,
+                            learning_rate=10, n_jobs=4)
                 X = real_rep.cpu().detach().numpy()  # [bs, hidden_dim]
                 X_tsne = tsne.fit_transform(X)  # [2*bs, 2]
                 fig = go.Figure()

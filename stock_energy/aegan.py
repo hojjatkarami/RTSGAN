@@ -506,7 +506,7 @@ class AeGAN:
             z = torch.randn(
                 batch_size, self.params['noise_dim']).to(self.device)
             x_fake = self.generator(z)
-            x_fake = torch.randn_like(x_fake)
+            # x_fake = torch.randn_like(x_fake)
             d_fake = self.discriminator(x_fake)
 
             # Generator's loss
@@ -514,9 +514,9 @@ class AeGAN:
             g_loss2 = bce_loss(d_fake, fake_labels) + \
                 bce_loss(d_real, real_labels)
             # Backpropagation and optimization for Generator
-            # # # self.generator.zero_grad()
-            # # # g_loss.backward()
-            # # # self.generator_optm.step()
+            self.generator.zero_grad()
+            g_loss.backward()
+            self.generator_optm.step()
 
             # toggle_grad(self.generator, True)
             # toggle_grad(self.discriminator, False)

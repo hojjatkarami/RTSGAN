@@ -45,11 +45,12 @@
 
                 "--dataset", "./data/data_frame_sine_normal.pkl",
                 "--log-dir", "./sine_normal_result",
-                "--task-name", "sine_normal_temp",
+                "--task-name", "sine_normal_temp2_new",
                 "--python-seed", "1374",
-                "--epochs", "1",
+                // "--hidden-dim","8",
+                "--epochs", "20",
                 "--iterations", "1000",
-                "--fix-ae", "sine_normal_result/sine_normal_vae/ae.dat",
+                // "--fix-ae", "sine_normal_result/sine_normal_vae/ae.dat",
                 "--gan-lr", "1e-3",
                 "--vae",
 

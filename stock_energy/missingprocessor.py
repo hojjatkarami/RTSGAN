@@ -1,9 +1,10 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
-from sklearn.preprocessing import MinMaxScaler, RobustScaler, LabelBinarizer
+from sklearn.preprocessing import MinMaxScaler, RobustScaler, LabelBinarizer, StandardScaler
 import numpy as np
 import pandas as pd
+
 
 class MissingProcessor:
     def __init__(self, threshold=None, which="continuous"):
@@ -11,11 +12,12 @@ class MissingProcessor:
         self.length = 0
         if which in ["binary", "categorical"]:
             self.model = LabelBinarizer()
-        else: 
-            self.model = MinMaxScaler()
+        else:
+            # self.model = MinMaxScaler()
+            self.model = StandardScaler()
         self.which = which
         self.missing = False
-        
+
     def fit(self, data):
         loc = np.isnan(data)
         if loc.any():
@@ -24,11 +26,11 @@ class MissingProcessor:
             if self.threshold is None:
                 self.threshold = 1.0 * sum(loc) / len(data)
             if loc.all():
-                res = self.model.fit_transform(np.zeros((1,1)))
+                res = self.model.fit_transform(np.zeros((1, 1)))
             else:
-                res = self.model.fit_transform(data[~loc].reshape(-1,1))
+                res = self.model.fit_transform(data[~loc].reshape(-1, 1))
         else:
-            res = self.model.fit_transform(data.reshape(-1,1))
+            res = self.model.fit_transform(data.reshape(-1, 1))
         self.length += res.shape[1]
 
     def transform(self, data, fillnan=np.nan):
@@ -36,16 +38,18 @@ class MissingProcessor:
             res = np.ones((len(data), self.length))
             loc = np.isnan(data)
             if fillnan != fillnan:
-                res[:, :-1] = self.model.transform(np.nan_to_num(data).reshape(-1,1))
+                res[:, :-
+                    1] = self.model.transform(np.nan_to_num(data).reshape(-1, 1))
                 res[loc] = 0
             else:
-                res[:, :-1] = self.model.transform(np.nan_to_num(data, nan=fillnan).reshape(-1,1))
+                res[:, :-1] = self.model.transform(
+                    np.nan_to_num(data, nan=fillnan).reshape(-1, 1))
                 res[loc, -1] = 0
-                #res[loc, -1] = 1 - 1.0*sum(loc)/len(loc)
-                #res[loc, -1]=np.random.rand(sum(loc))*self.threshold
+                # res[loc, -1] = 1 - 1.0*sum(loc)/len(loc)
+                # res[loc, -1]=np.random.rand(sum(loc))*self.threshold
             return res.astype("float32")
         else:
-            return self.model.transform(data.reshape(-1,1))
+            return self.model.transform(data.reshape(-1, 1))
 
     def inverse_transform(self, data):
         if self.missing:
@@ -60,6 +64,7 @@ class MissingProcessor:
             res = res.round()
         return res
 
+
 class Processor:
     def __init__(self, types):
         self.names = []
@@ -72,7 +77,7 @@ class Processor:
         self.models = []
         self.dim = 0
         matrix = data.values
-        for i, (types, col) in enumerate(zip(self.types,data.columns)):
+        for i, (types, col) in enumerate(zip(self.types, data.columns)):
             value = matrix[:, i]
             self.names.append(col)
             model = MissingProcessor(which=types)
@@ -80,7 +85,7 @@ class Processor:
             self.models.append(model)
             print(col, model.length, model.threshold, model.which)
             self.dim += model.length
-            
+
     def transform(self, data, nan_lis=None):
         cols = []
         matrix = data.values
@@ -95,15 +100,14 @@ class Processor:
     def fit_transform(self, data):
         self.fit(data)
         return self.transform(data)
-        
+
     def inverse_transform(self, data):
         res = []
-        j=0
+        j = 0
         for model in self.models:
             value = data[:, j:j+model.length]
             x = model.inverse_transform(value)
             res.append(x)
-            j+=model.length
+            j += model.length
         matrix = np.concatenate(res, axis=1)
         return pd.DataFrame(matrix, columns=self.names)
-

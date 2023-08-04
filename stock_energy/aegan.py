@@ -18,6 +18,7 @@ import time
 import wandb
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from tqdm import tqdm
 from MulticoreTSNE import MulticoreTSNE as TSNE
 
@@ -303,7 +304,7 @@ class AeGAN:
                     iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(), reg.item()
                 ))
 
-            if (iteration+1) % 50 == 0:
+            if (iteration+1) % 10 == 0:
                 # plot one generated sample
                 plot = self.save_sample_wandb(
                     seq_len=batch_x['seq_len'][0].item())
@@ -360,11 +361,55 @@ class AeGAN:
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}".format(
                     i+1, time.time()-t1, (con_loss+dis_loss)/tot, con_loss/tot, dis_loss/tot))
-            if i % 10 == 0:
-                plot = self.plot_ae(dyn, out_dyn, i)
+            if i % 5 == 0:
+                # plot = self.plot_ae(dyn, out_dyn, i)
+                x_values = np.arange(out_dyn.shape[1])
+                fig = go.Figure()
+
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=dyn[0, :, 0].cpu().detach().numpy(), mode='lines+markers', name='S1'))
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=out_dyn[0, :, 0].cpu().detach().numpy(), mode='lines+markers', name='S1-rec'))
+
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=dyn[0, :, 1].cpu().detach().numpy(), mode='lines+markers', name='S2'))
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=out_dyn[0, :, 1].cpu().detach().numpy(), mode='lines+markers', name='S2-rec'))
+
+                plot = wandb.Plotly(fig)
+
+                # plot t-SNE
+                tsne = TSNE(n_components=2, perplexity=30,
+                            learning_rate=10, n_jobs=4)
+                out = self.ae.encoder(
+                    sta, dyn, seq_len)  # [bs, hidden_dim]
+                if isinstance(out, tuple):
+                    mu, logvar = out
+                    real_rep = self.ae.reparameterize(mu, logvar)
+
+                    # plot mu and logvar
+                    fig = go.Figure()
+                    fig.add_trace(
+                        go.Bar(x=np.arange(mu.shape[1]), y=mu.mean(0).cpu().detach().numpy(), name='mu'))
+
+                    fig.add_trace(
+                        go.Bar(x=np.arange(logvar.shape[1]), y=logvar.mean(0).cpu().detach().numpy(), name='logvar'))
+                    fig.update_layout(yaxis_range=[-0.1, 0.1])
+
+                    plot_vae = wandb.Plotly(fig)
+                    wandb.log({"vae": plot_vae}, step=i)
+                else:
+                    real_rep = out
+                X = real_rep.cpu().detach().numpy()  # [bs, hidden_dim]
+                X_tsne = tsne.fit_transform(X)  # [2*bs, 2]
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=X_tsne[:, 0], y=X_tsne[:, 1], mode='markers', name='real'))
+
+                plot_tsne = wandb.Plotly(fig)
 
                 wandb.log(
-                    {"example_rec": plot}, step=i)
+                    {"example_rec": plot, "tsne_AE": plot_tsne}, step=i)
         torch.save(self.ae.state_dict(),
                    '{}/ae.dat'.format(self.params["root_dir"]))
 
@@ -411,7 +456,7 @@ class AeGAN:
                     # # On fake data
                     # with torch.no_grad():
                     x_fake = self.generator(z)  # [bs, hidden_dim]
-
+                    x_fake = torch.randn_like(x_fake)
                     # x_fake.requires_grad_()
                     d_fake = self.discriminator(x_fake.detach())
 
@@ -455,6 +500,7 @@ class AeGAN:
             z = torch.randn(
                 batch_size, self.params['noise_dim']).to(self.device)
             x_fake = self.generator(z)
+            x_fake = torch.randn_like(x_fake)
             d_fake = self.discriminator(x_fake)
 
             # Generator's loss
@@ -462,9 +508,9 @@ class AeGAN:
             g_loss2 = bce_loss(d_fake, fake_labels) + \
                 bce_loss(d_real, real_labels)
             # Backpropagation and optimization for Generator
-            self.generator.zero_grad()
-            g_loss.backward()
-            self.generator_optm.step()
+            # # # self.generator.zero_grad()
+            # # # g_loss.backward()
+            # # # self.generator_optm.step()
 
             # toggle_grad(self.generator, True)
             # toggle_grad(self.discriminator, False)
@@ -525,15 +571,25 @@ class AeGAN:
 
     def save_sample_wandb(self, seq_len=24):
 
-        x = np.array(self.synthesize(1, seq_len=seq_len)[0])  # (seq_len, dim)
-        x_values = np.arange(x.shape[0])
-        y_values = x[:, 0]
+        # x = np.array(self.synthesize(9, seq_len=seq_len)[0])  # (seq_len, dim)
+        # x_values = np.arange(x.shape[0])
+        # y_values = x[:, 0]
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=x_values, y=x[:, 0], mode='lines+markers', name='S1'))
-        fig.add_trace(go.Scatter(
-            x=x_values, y=x[:, 1], mode='lines+markers', name='S2'))
+        # fig = go.Figure()
+        # fig.add_trace(go.Scatter(
+        #     x=x_values, y=x[:, 0], mode='lines+markers', name='S1'))
+        # fig.add_trace(go.Scatter(
+        #     x=x_values, y=x[:, 1], mode='lines+markers', name='S2'))
+
+        fig = make_subplots(rows=3, cols=3)
+        x = np.array(self.synthesize(9, seq_len=seq_len))
+        x_values = np.arange(x.shape[1])
+        for i in range(3):
+            for j in range(3):
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=x[i*3+j, :, 0], mode='lines+markers', name='S1', line=dict(color='blue')), row=i+1, col=j+1)
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=x[i*3+j, :, 1], mode='lines+markers', name='S2', line=dict(color='red')), row=i+1, col=j+1)
 
         plot = wandb.Plotly(fig)
         return plot
@@ -546,6 +602,7 @@ class AeGAN:
             with torch.no_grad():
                 z = torch.randn(n, self.params['noise_dim']).to(self.device)
                 hidden = self.generator(z)
+                hidden = torch.randn_like(hidden)
                 dynamics = self.ae.decoder.generate_dynamics(hidden, seq_len)
             res = []
             for i in range(n):

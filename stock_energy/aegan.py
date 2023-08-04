@@ -376,7 +376,7 @@ class AeGAN:
                 fig.add_trace(go.Scatter(
                     x=x_values, y=out_dyn[0, :, 1].cpu().detach().numpy(), mode='lines+markers', name='S2-rec'))
 
-                plot = wandb.Plotly(fig)
+                plot_AE_rec = wandb.Plotly(fig)
 
                 # plot t-SNE
                 tsne = TSNE(n_components=2, perplexity=30,
@@ -398,6 +398,12 @@ class AeGAN:
 
                     plot_vae = wandb.Plotly(fig)
                     wandb.log({"vae": plot_vae}, step=i)
+
+                    # plot AE synth
+                    plot_AE_syn = self.save_sample_wandb(
+                        seq_len=batch_x['seq_len'][0].item(), from_generator=False)
+                    wandb.log(
+                        {"example_AE_syn": plot_AE_syn}, step=i)
                 else:
                     real_rep = out
                 X = real_rep.cpu().detach().numpy()  # [bs, hidden_dim]
@@ -409,7 +415,7 @@ class AeGAN:
                 plot_tsne = wandb.Plotly(fig)
 
                 wandb.log(
-                    {"example_rec": plot, "tsne_AE": plot_tsne}, step=i)
+                    {"example_rec": plot_AE_rec, "tsne_AE": plot_tsne}, step=i)
         torch.save(self.ae.state_dict(),
                    '{}/ae.dat'.format(self.params["root_dir"]))
 
@@ -456,7 +462,7 @@ class AeGAN:
                     # # On fake data
                     # with torch.no_grad():
                     x_fake = self.generator(z)  # [bs, hidden_dim]
-                    x_fake = torch.randn_like(x_fake)
+                    # x_fake = torch.randn_like(x_fake)
                     # x_fake.requires_grad_()
                     d_fake = self.discriminator(x_fake.detach())
 
@@ -540,7 +546,7 @@ class AeGAN:
             if (iteration+1) % 50 == 0:
                 # plot one generated sample
                 plot = self.save_sample_wandb(
-                    seq_len=batch_x['seq_len'][0].item())
+                    seq_len=batch_x['seq_len'][0].item(), from_generator=True)
                 wandb.log(
                     {"example_syn": plot}, step=iteration+1)
 
@@ -569,7 +575,7 @@ class AeGAN:
 
         return plot
 
-    def save_sample_wandb(self, seq_len=24):
+    def save_sample_wandb(self, seq_len=24, from_generator=True):
 
         # x = np.array(self.synthesize(9, seq_len=seq_len)[0])  # (seq_len, dim)
         # x_values = np.arange(x.shape[0])
@@ -582,7 +588,8 @@ class AeGAN:
         #     x=x_values, y=x[:, 1], mode='lines+markers', name='S2'))
 
         fig = make_subplots(rows=3, cols=3)
-        x = np.array(self.synthesize(9, seq_len=seq_len))
+        x = np.array(self.synthesize(9, seq_len=seq_len,
+                     from_generator=from_generator))
         x_values = np.arange(x.shape[1])
         for i in range(3):
             for j in range(3):
@@ -594,15 +601,17 @@ class AeGAN:
         plot = wandb.Plotly(fig)
         return plot
 
-    def synthesize(self, n, seq_len=24, batch_size=500):
+    def synthesize(self, n, seq_len=24, batch_size=500, from_generator=True):
         self.ae.decoder.eval()
         self.generator.eval()
 
         def _gen(n):
             with torch.no_grad():
                 z = torch.randn(n, self.params['noise_dim']).to(self.device)
-                hidden = self.generator(z)
-                hidden = torch.randn_like(hidden)
+                if from_generator:
+                    hidden = self.generator(z)
+                else:
+                    hidden = torch.randn_like(hidden)
                 dynamics = self.ae.decoder.generate_dynamics(hidden, seq_len)
             res = []
             for i in range(n):

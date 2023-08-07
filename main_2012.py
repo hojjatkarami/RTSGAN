@@ -191,7 +191,10 @@ else:
 if options.fix_gan is not None:
     syn.load_generator(options.fix_gan)
 else:
-    syn.train_gan2(train_set, options.iterations, options.d_update)
+    if options.vae:
+        syn.train_gan2(train_set, options.iterations, options.d_update)
+    else:
+        syn.train_gan(train_set, options.iterations, options.d_update)
 
 h = syn.gen_hidden(len(train_set))
 with open("{}/gen_hidden".format(root_dir), "wb") as f:

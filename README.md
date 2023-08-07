@@ -90,3 +90,19 @@ You are more than welcome to cite our paper:
   year={2021}
 }
 ```
+
+# Train RTSGAN
+
+- set env to paper2022
+- for test
+
+  - `python main_stock.py --dataset "./data/stock.pkl" --log-dir "./stock_result" --task-name stock_rep --python-seed 1374 --epochs 1 --iterations 1`
+
+- for stock dataset:
+  - `python main_stock.py --dataset "./data/stock.pkl" --log-dir "./stock_result" --task-name stock_rep --python-seed 1374 --epochs 1000 --iterations 15000`
+- for energy dataset:
+  - `python main_stock.py --dataset "./data/energy.pkl" --log-dir "./energy_result" --task-name energy_rep --python-seed 1374 --epochs 200 --iterations 1000                  --hidden-dim 112 --embed-dim 448 --noise-dim 448 --layers 3`
+- for sine_normal dataset
+  - `python main_stock.py --dataset "./data/data_frame_sine_normal.pkl" --log-dir "./sine_normal_result" --task-name sine_normal --python-seed 1374 --epochs 50 --iterations 1000 --vae`
+- for iiregular sine data
+  - `python main_2012.py --dataset "./data/physio_data/sine_irreg.pkl" --log-dir "./sine_irr_result" --task-name sine_irr_1 --python-seed 1374 --epochs 50 --iterations 1000 --vae`

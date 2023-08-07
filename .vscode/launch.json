@@ -58,10 +58,10 @@
 
                 "--dataset", "./data/physio_data/sine_irreg.pkl",
                 "--log-dir", "./sine_irr_result",
-                "--task-name", "temp",
+                "--task-name", "temp1",
                 "--python-seed", "1374",
-                "--epochs", "20",
-                "--fix-ae", "sine_irr_result/temp/ae.dat",
+                "--epochs", "50",
+                // "--fix-ae", "sine_irr_result/temp/ae.dat",
                 "--vae",
 
                 "--iterations", "1000"

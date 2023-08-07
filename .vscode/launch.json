@@ -11,7 +11,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": false,
+            "justMyCode": true,
             "args": [
                 // main2012.py
                 // "--dataset", "./data/physio_data/full2012.pkl",
@@ -43,25 +43,28 @@
                 // "--epochs", "2",
                 // "--iterations", "500"
 
-                "--dataset", "./data/data_frame_sine_normal.pkl",
-                "--log-dir", "./sine_normal_result",
-                "--task-name", "temp",
-                "--python-seed", "1374",
-                // "--hidden-dim","8",
-                "--epochs", "20",
-                "--iterations", "1000",
-                // "--fix-ae", "sine_normal_result/sine_normal_vae/ae.dat",
-                "--gan-lr", "1e-3",
-                // "--vae",
+                // "--dataset", "./data/data_frame_sine_normal.pkl",
+                // "--log-dir", "./sine_normal_result",
+                // "--task-name", "temp",
+                // "--python-seed", "1374",
+                // // "--hidden-dim","8",
+                // "--epochs", "20",
+                // "--iterations", "1000",
+                // // "--fix-ae", "sine_normal_result/sine_normal_vae/ae.dat",
+                // "--gan-lr", "1e-3",
+                // // "--vae",
 
                 // syn irregular
 
-                // "--dataset", "./data/physio_data/syn1.pkl",
-                // "--log-dir", "./sine_irr_result",
-                // "--task-name", "syn_test",
-                // "--python-seed", "1374",
-                // "--epochs", "1",
-                // "--iterations", "1000"
+                "--dataset", "./data/physio_data/sine_irreg.pkl",
+                "--log-dir", "./sine_irr_result",
+                "--task-name", "temp",
+                "--python-seed", "1374",
+                "--epochs", "20",
+                "--fix-ae", "sine_irr_result/temp/ae.dat",
+                "--vae",
+
+                "--iterations", "1000"
 
             ]
         }

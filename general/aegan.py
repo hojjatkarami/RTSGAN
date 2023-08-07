@@ -9,7 +9,7 @@ from fastNLP import DataSet, DataSetIter, RandomSampler, SequentialSampler
 from fastNLP import seq_len_to_mask
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, LabelBinarizer
 from basic import max_pooling
-from autoencoder import Autoencoder
+from autoencoder import Autoencoder, VariationalAutoencoder
 from gan import Generator, Discriminator
 import random
 from torch import autograd
@@ -18,8 +18,11 @@ import time
 from tqdm import tqdm
 
 import wandb
+from plotly.subplots import make_subplots
+
 import plotly.express as px
 import plotly.graph_objects as go
+from MulticoreTSNE import MulticoreTSNE as TSNE
 
 
 class AeGAN:
@@ -31,8 +34,13 @@ class AeGAN:
         self.logger = params["logger"]
         self.static_processor, self.dynamic_processor = processors
 
-        self.ae = Autoencoder(
-            processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"])
+        if params["vae"]:
+            self.ae = VariationalAutoencoder(
+                processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"])
+        else:
+            self.ae = Autoencoder(
+                processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"])
+
         self.ae.to(self.device)
         """
         self.decoder_optm = torch.optim.Adam(
@@ -196,10 +204,8 @@ class AeGAN:
             x=x_values, y=y_values, mode='lines+markers', name='S2_rec'))
 
         plot = wandb.Plotly(fig)
-        wandb.log(
-            {"example_rec": plot}, step=i+1)
 
-        return
+        return plot
 
     def train_ae(self, dataset, epochs=800):
         min_loss = 1e15
@@ -270,13 +276,14 @@ class AeGAN:
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}\t{}\t{}".format(
                     i+1, time.time()-t1, force, con_loss/tot, dis_loss/tot, miss_loss1/tot, miss_loss2/tot))
-            if (i+1) % 5 == 0:
-                self.plot_ae(dyn, mask, out_dyn, missing, i)
-
-                x_values = torch.masked_select(torch.arange(
-                    out_dyn.shape[1], device=mask.device), mask[0, :, 0] == 1)
-                y_values = torch.masked_select(
-                    dyn[0, :, 0], mask[0, :, 0] == 1)
+            if i % 5 == 0:
+                plot_AE_rec = self.plot_ae(dyn, mask, out_dyn, missing, i)
+                wandb.log(
+                    {"example_rec": plot_AE_rec}, step=i)
+                # x_values = torch.masked_select(torch.arange(
+                #     out_dyn.shape[1], device=mask.device), mask[0, :, 0] == 1)
+                # y_values = torch.masked_select(
+                #     dyn[0, :, 0], mask[0, :, 0] == 1)
                 # times [bs, max_len, 1], dyn [bs, max_len, n_features], out_dyn [bs, max_len, n_features]
             if i % 100 == 99:
                 torch.save(self.ae.state_dict(),
@@ -374,31 +381,327 @@ class AeGAN:
                     iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(), reg.item()
                 ))
 
-            if iteration % 50 == 0:
+            if iteration % 10 == 0:
                 # table = self.save_sample_wandb()
                 # wandb.log(
                 #     {"example_syn": wandb.plot.line(table, "t", "y",
                 #                                     title="Example Synthesized Time Series")}, step=iteration+1)
+
+                # plot one generated sample
+                # plot = self.save_sample_wandb(
+                #     seq_len=batch_x['seq_len'][0].item())
                 plot = self.save_sample_wandb()
                 wandb.log(
                     {"example_syn": plot}, step=iteration+1)
 
+                # plot t-SNE of latent space
+                plot = self.plot_tsne(real_rep.cpu().detach(
+                ).numpy(), x_fake.cpu().detach().numpy())
+                wandb.log(
+                    {"tsne": plot}, step=iteration+1)
+
         torch.save(self.generator.state_dict(),
                    '{}/generator.dat'.format(self.params["root_dir"]))
 
-    def save_sample_wandb(self):
-        sta, dyn = self.synthesize(1)
-        x_values = dyn[0].time.values
-        y_values = dyn[0].S1.values
+    def train_ae2(self, dataset, epochs=800):
+        min_loss = 1e15
+        best_epsilon = 0
+        train_batch = DataSetIter(
+            dataset=dataset, batch_size=self.params["ae_batch_size"], sampler=RandomSampler())
+        force = 1
+        for i in tqdm(range(epochs)):
+            self.ae.train()
+            tot_loss = 0
+            con_loss = 0
+            dis_loss = 0
+            KLD_loss = 0
 
-        # data = [[x, y] for (x, y) in zip(x_values, y_values)]
+            miss_loss1 = 0
+            miss_loss2 = 0
+            tot = 0
+            t1 = time.time()
+            if self.params["force"] == "linear":
+                if i >= epochs / 100 and i < epochs / 2:
+                    force -= 2 / epochs
+                elif i >= epochs / 2:
+                    force = -1
+            elif self.params["force"] == "constant":
+                force = 0.5
+            else:
+                force = 1
+            for batch_x, batch_y in train_batch:
+                self.ae.zero_grad()
+                sta = batch_x["sta"].to(self.device)
+                dyn = batch_x["dyn"].to(self.device)
+                mask = batch_x["mask"].to(self.device)
+                lag = batch_x["lag"].to(self.device)
+                priv = batch_x["priv"].to(self.device)
+                nex = batch_x["nex"].to(self.device)
+                times = batch_x["times"].to(self.device)
+                seq_len = batch_x["seq_len"].to(self.device)
 
-        # table = wandb.Table(data=data, columns=["x", "y"])
+                out_sta, out_dyn, missing, gt = self.ae(
+                    sta, dyn, lag, mask, priv, nex, times, seq_len, forcing=force)
+                # [bs, max_len, n_features], [bs, max_len, n_features], [bs]
+                loss3 = self.missing_loss(missing, mask, seq_len)
+                miss_loss1 += loss3.item()
+                loss4 = self.time_loss(gt, times, seq_len)
+                miss_loss2 += loss4.item()
+
+                loss1 = self.sta_loss(out_sta, sta)
+                loss2 = self.dyn_loss(out_dyn, dyn, seq_len, mask)
+
+                sta_num = len(self.static_processor.models)
+                dyn_num = len(self.dynamic_processor.models)
+                scale1 = sta_num / (sta_num + dyn_num)
+                scale2 = dyn_num / (sta_num + dyn_num)
+                scale3 = 0.1
+
+                loss = scale1 * loss1 + scale2 * \
+                    (loss2 + loss3) + scale3 * loss4 + self.ae.KLD
+                # loss = loss1 + loss2 + loss3 + loss4
+                loss.backward()
+                self.ae_optm.step()
+
+                tot_loss += loss.item()
+                con_loss += loss1.item()
+                dis_loss += loss2.item()
+                KLD_loss += self.ae.KLD.item()
+
+                tot += 1
+
+            tot_loss /= tot
+            wandb.log({"ae_loss": tot_loss, "KLD loss": KLD_loss/tot}, step=i+1)
+
+            if i % 5 == 0:
+                self.logger.info("Epoch:{} {}\t{}\t{}\t{}\t{}\t{}".format(
+                    i+1, time.time()-t1, force, con_loss/tot, dis_loss/tot, miss_loss1/tot, miss_loss2/tot))
+            if i % 5 == 0:
+                plot_AE_rec = self.plot_ae(dyn, mask, out_dyn, missing, i)
+
+                # x_values = torch.masked_select(torch.arange(
+                #     out_dyn.shape[1], device=mask.device), mask[0, :, 0] == 1)
+                # y_values = torch.masked_select(
+                #     dyn[0, :, 0], mask[0, :, 0] == 1)
+                # times [bs, max_len, 1], dyn [bs, max_len, n_features], out_dyn [bs, max_len, n_features]
+                out = self.ae.encoder(
+                    sta, dyn, priv, nex, mask, times, seq_len)  # [bs, hidden_dim]
+                if isinstance(out, tuple):
+                    mu, logvar = out
+                    real_rep = self.ae.reparameterize(mu, logvar)
+
+                    # plot mu and logvar
+                    fig = go.Figure()
+                    fig.add_trace(
+                        go.Bar(x=np.arange(mu.shape[1]), y=mu.mean(0).cpu().detach().numpy(), name='mu'))
+
+                    fig.add_trace(
+                        go.Bar(x=np.arange(logvar.shape[1]), y=logvar.mean(0).cpu().detach().numpy(), name='logvar'))
+                    fig.update_layout(yaxis_range=[-0.1, 0.1])
+
+                    plot_vae = wandb.Plotly(fig)
+                    wandb.log({"vae": plot_vae}, step=i)
+
+                    # plot AE synth
+                    plot_AE_syn = self.save_sample_wandb(from_generator=False)
+                    wandb.log(
+                        {"example_AE_syn": plot_AE_syn}, step=i)
+                else:
+                    real_rep = out
+                # plot t-SNE
+                tsne = TSNE(n_components=2, perplexity=30,
+                            learning_rate=10, n_jobs=4)
+                X = real_rep.cpu().detach().numpy()  # [bs, hidden_dim]
+                X_tsne = tsne.fit_transform(X)  # [2*bs, 2]
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=X_tsne[:, 0], y=X_tsne[:, 1], mode='markers', name='real'))
+
+                plot_tsne = wandb.Plotly(fig)
+
+                wandb.log(
+                    {"example_rec": plot_AE_rec, "tsne_AE": plot_tsne}, step=i)
+            if i % 100 == 99:
+                torch.save(self.ae.state_dict(),
+                           '{}/ae{}.dat'.format(self.params["root_dir"], i))
+                self.generate_ae(dataset[:100])
+
+        torch.save(self.ae.state_dict(),
+                   '{}/ae.dat'.format(self.params["root_dir"]))
+
+    def train_gan2(self, dataset, iterations=15000, d_update=5):
+        self.discriminator.train()
+        self.generator.train()
+        self.ae.train()
+        batch_size = self.params["gan_batch_size"]
+        idxs = list(range(len(dataset)))
+        batch = DataSetIter(
+            dataset=dataset, batch_size=batch_size, sampler=RandomSampler())
+        min_loss = 1e15
+        for iteration in tqdm(range(iterations)):
+            avg_d_loss = 0
+            t1 = time.time()
+            toggle_grad(self.generator, False)
+            toggle_grad(self.discriminator, True)
+            bce_loss = nn.BCEWithLogitsLoss().to(self.device)
+
+            for j in range(d_update):
+                for batch_x, batch_y in batch:
+                    self.discriminator_optm.zero_grad()
+                    z = torch.randn(
+                        batch_size, self.params['noise_dim']).to(self.device)
+
+                    sta = batch_x["sta"].to(self.device)
+                    dyn = batch_x["dyn"].to(self.device)
+                    mask = batch_x["mask"].to(self.device)
+                    lag = batch_x["lag"].to(self.device)
+                    priv = batch_x["priv"].to(self.device)
+                    nex = batch_x["nex"].to(self.device)
+                    times = batch_x["times"].to(self.device)
+                    seq_len = batch_x["seq_len"].to(self.device)
+
+                    out = self.ae.encoder(
+                        sta, dyn, priv, nex, mask, times, seq_len)
+                    if isinstance(out, tuple):
+                        mu, logvar = out
+                        real_rep = self.ae.reparameterize(mu, logvar)
+                    else:
+                        real_rep = out
+                    d_real = self.discriminator(real_rep)
+                    real_labels = torch.ones_like(d_real)
+                    # dloss_real = -d_real.mean()
+                    d_loss_real = bce_loss(d_real, real_labels)
+                    # dloss_real.backward()
+
+                    """
+                    dloss_real.backward(retain_graph=True)
+                    reg = 10 * compute_grad2(d_real, real_rep).mean()
+                    reg.backward()
+                    """
+
+                    # On fake data
+                    # with torch.no_grad():
+                    x_fake = self.generator(z)
+
+                    # x_fake.requires_grad_()
+                    d_fake = self.discriminator(x_fake.detach())
+                    fake_labels = torch.zeros_like(d_fake)
+                    d_loss_fake = bce_loss(d_fake, fake_labels)
+
+                    # Backpropagation and optimization for Discriminator
+                    disc_loss = (d_loss_real + d_loss_fake)/2
+                    disc_loss.backward()
+
+                    # dloss_fake = d_fake.mean()
+                    # """
+                    # y = d_fake.new_full(size=d_fake.size(), fill_value=0)
+                    # dloss_fake = F.binary_cross_entropy_with_logits(d_fake, y)
+                    # """
+                    # # dloss_fake.backward()
+                    # """
+                    # dloss_fake.backward(retain_graph=True)
+                    # reg = 10 * compute_grad2(d_fake, x_fake).mean()
+                    # reg.backward()
+                    # """
+                    reg = 10 * self.wgan_gp_reg(real_rep, x_fake)
+                    reg.backward()
+
+                    self.discriminator_optm.step()
+                    # d_loss = dloss_fake + dloss_real
+                    avg_d_loss += disc_loss.item()
+                    break
+
+            avg_d_loss /= d_update
+
+            toggle_grad(self.generator, True)
+            toggle_grad(self.discriminator, False)
+            self.generator_optm.zero_grad()
+            z = torch.randn(batch_size, self.params['noise_dim']).to(
+                self.device)  # batch_size, noise_dim
+            x_fake = self.generator(z)  # batch_size, hidden_dim
+            d_fake = self.discriminator(x_fake)  # batch_size, 1
+            # g_loss = -torch.mean(self.discriminator(x_fake))  # [batch,1]->scalar
+            # g_loss.backward()
+            # self.generator_optm.step()
+            # Generator's loss
+            g_loss = bce_loss(d_fake, real_labels)
+            g_loss2 = bce_loss(d_fake, fake_labels) + \
+                bce_loss(d_real, real_labels)
+            # Backpropagation and optimization for Generator
+            self.generator.zero_grad()
+            g_loss.backward()
+            self.generator_optm.step()
+
+            wandb.log({"d_loss": avg_d_loss, "g_loss": g_loss.item(), "g_loss2": g_loss2.item()},
+                      step=iteration+1)
+            if iteration % 50 == 49:
+                self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] [%f]' % (
+                    iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(), reg.item()
+                ))
+
+            if iteration % 10 == 0:
+                # table = self.save_sample_wandb()
+                # wandb.log(
+                #     {"example_syn": wandb.plot.line(table, "t", "y",
+                #                                     title="Example Synthesized Time Series")}, step=iteration+1)
+
+                # plot one generated sample
+                # plot = self.save_sample_wandb(
+                #     seq_len=batch_x['seq_len'][0].item())
+                plot = self.save_sample_wandb()
+                wandb.log(
+                    {"example_syn": plot}, step=iteration+1)
+
+                # plot t-SNE of latent space
+                plot = self.plot_tsne(real_rep.cpu().detach(
+                ).numpy(), x_fake.cpu().detach().numpy())
+                wandb.log(
+                    {"tsne": plot}, step=iteration+1)
+
+        torch.save(self.generator.state_dict(),
+                   '{}/generator.dat'.format(self.params["root_dir"]))
+
+    def plot_tsne(self, real_rep, x_fake):
+
+        batch_size = real_rep.shape[0]
+        tsne = TSNE(n_components=2, perplexity=30, learning_rate=10, n_jobs=4)
+
+        X = np.concatenate([real_rep, x_fake], axis=0)  # [2*bs, hidden_dim]
+        X_tsne = tsne.fit_transform(X)  # [2*bs, 2]
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=x_values, y=dyn[0].S1.values, mode='lines+markers', name='S1'))
+            x=X_tsne[:batch_size, 0], y=X_tsne[:batch_size, 1], mode='markers', name='real'))
         fig.add_trace(go.Scatter(
-            x=x_values, y=dyn[0].S2.values, mode='lines+markers', name='S2'))
+            x=X_tsne[batch_size:, 0], y=X_tsne[batch_size:, 1], mode='markers', name='fake'))
+        plot = wandb.Plotly(fig)
+
+        return plot
+
+    def save_sample_wandb(self, from_generator=True):
+        # sta, dyn = self.synthesize(1)
+
+        # # # x_values = dyn[0].time.values
+        # # # y_values = dyn[0].S1.values
+
+        # # # fig = go.Figure()
+        # # # fig.add_trace(go.Scatter(
+        # # #     x=x_values, y=dyn[0].S1.values, mode='lines+markers', name='S1'))
+        # # # fig.add_trace(go.Scatter(
+        # # #     x=x_values, y=dyn[0].S2.values, mode='lines+markers', name='S2'))
+
+        fig = make_subplots(rows=3, cols=3)
+        sta, dyn = self.synthesize(9,  from_generator=from_generator)
+        # x = np.array()
+        # x_values = np.arange(x.shape[1])
+        for i in range(3):
+            for j in range(3):
+                x_values = dyn[i*3+j].time.values
+                y_values1 = dyn[i*3+j].S1.values
+                y_values2 = dyn[i*3+j].S2.values
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=y_values1, mode='lines+markers', name='S1', line=dict(color='blue')), row=i+1, col=j+1)
+                fig.add_trace(go.Scatter(
+                    x=x_values, y=y_values2, mode='lines+markers', name='S2', line=dict(color='red')), row=i+1, col=j+1)
 
         plot = wandb.Plotly(fig)
         return plot

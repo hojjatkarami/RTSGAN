@@ -31,6 +31,8 @@ DEBUG_SCALE = 512
 # Argument parsing
 # ===-----------------------------------------------------------------------===
 parser = argparse.ArgumentParser()
+parser.add_argument("--vae", default=False, dest="vae", action="store_true",)
+
 parser.add_argument("--dataset", required=True,
                     dest="dataset", help=".pkl file to use")
 parser.add_argument("--force", default="", dest="force", help="schedule")
@@ -156,37 +158,40 @@ wandb.init(config=syn.params,
 if options.fix_ae is not None:
     syn.load_ae(options.fix_ae)
 else:
-    syn.train_ae(train_set, options.epochs)
+    if options.vae:
+        syn.train_ae2(train_set, options.epochs)
+    else:
+        syn.train_ae(train_set, options.epochs)
     wandb.save('{}/ae.dat'.format(syn.params["root_dir"]))
 
-h = syn.eval_ae(train_set)
-with open("{}/hidden".format(root_dir), "wb") as f:
-    pickle.dump(h, f)
+# # # h = syn.eval_ae(train_set)
+# # # with open("{}/hidden".format(root_dir), "wb") as f:
+# # #     pickle.dump(h, f)
 
-sta, dyn = syn.generate_ae(train_set)
-make_sure_path_exists("{}/reconstruction".format(root_dir))
-for i, res in enumerate(dyn[:10]):
-    res.to_csv("{}/reconstruction/p{}.psv".format(root_dir, i),
-               sep='\t', index=False)
-logger.info("Finish eval ae")
+# # # sta, dyn = syn.generate_ae(train_set)
+# # # make_sure_path_exists("{}/reconstruction".format(root_dir))
+# # # for i, res in enumerate(dyn[:10]):
+# # #     res.to_csv("{}/reconstruction/p{}.psv".format(root_dir, i),
+# # #                sep='\t', index=False)
+# # # logger.info("Finish eval ae")
 
-if dataset.get('val_set') is not None:
-    val_set = dataset['val_set']
-    val_set.set_input("dyn", "mask", "sta", "times",
-                      "lag", "seq_len", "priv", "nex")
-    h = syn.eval_ae(val_set)
-    with open("{}/hidden".format(root_dir), "wb") as f:
-        pickle.dump(h, f)
-    vs, vd = syn.generate_ae(val_set)
-    make_sure_path_exists("{}/val".format(root_dir))
-    for i, res in enumerate(vd):
-        res.to_csv("{}/val/p{}.psv".format(root_dir, i), sep='\t', index=False)
-    logger.info("Finish val")
+# if dataset.get('val_set') is not None:
+#     val_set = dataset['val_set']
+#     val_set.set_input("dyn", "mask", "sta", "times",
+#                       "lag", "seq_len", "priv", "nex")
+#     h = syn.eval_ae(val_set)
+#     with open("{}/hidden".format(root_dir), "wb") as f:
+#         pickle.dump(h, f)
+#     vs, vd = syn.generate_ae(val_set)
+#     make_sure_path_exists("{}/val".format(root_dir))
+#     for i, res in enumerate(vd):
+#         res.to_csv("{}/val/p{}.psv".format(root_dir, i), sep='\t', index=False)
+#     logger.info("Finish val")
 
 if options.fix_gan is not None:
     syn.load_generator(options.fix_gan)
 else:
-    syn.train_gan(train_set, options.iterations, options.d_update)
+    syn.train_gan2(train_set, options.iterations, options.d_update)
 
 h = syn.gen_hidden(len(train_set))
 with open("{}/gen_hidden".format(root_dir), "wb") as f:

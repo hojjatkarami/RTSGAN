@@ -11,7 +11,7 @@ from sklearn.metrics import f1_score, recall_score
 
 
 class Physio2012(AeGAN):
-    def synthesize(self, n, batch_size=500):
+    def synthesize(self, n, batch_size=500, from_generator=True):
         self.ae.decoder.eval()
         self.generator.eval()
         sta = []
@@ -22,6 +22,8 @@ class Physio2012(AeGAN):
             with torch.no_grad():
                 z = torch.randn(n, self.params['noise_dim']).to(self.device)
                 hidden = self.generator(z)
+                if from_generator == False:
+                    z = torch.randn_like(hidden)
                 statics = self.ae.decoder.generate_statics(hidden)
                 df_sta = self.static_processor.inverse_transform(
                     statics.cpu().numpy())

@@ -9,7 +9,7 @@ from basic import PositionwiseFeedForward, PositionalEncoding, TimeEncoding, max
 import random
 import pickle
 TIME_CONST = 0
-TIME_NORM = True
+TIME_NORM = False
 
 
 with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:

@@ -109,6 +109,7 @@ random.seed(options.python_seed)
 np.random.seed(options.python_seed % (2 ** 32 - 1))
 logger.info('Python random seed: {}'.format(options.python_seed))
 
+
 # ===-----------------------------------------------------------------------===
 # Read in dataset
 # ===-----------------------------------------------------------------------===

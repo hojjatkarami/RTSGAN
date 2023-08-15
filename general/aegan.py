@@ -26,7 +26,7 @@ import plotly.graph_objects as go
 from MulticoreTSNE import MulticoreTSNE as TSNE
 
 TIME_CONST = 0
-TIME_NORM = True
+TIME_NORM = False
 
 with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:
     pt = pickle.load(f)

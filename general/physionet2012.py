@@ -9,9 +9,11 @@ from aegan import AeGAN
 from fastNLP import DataSet, DataSetIter, RandomSampler, SequentialSampler
 from sklearn.metrics import f1_score, recall_score
 
+from fastNLP import seq_len_to_mask
+
 
 class Physio2012(AeGAN):
-    def synthesize(self, n, batch_size=500, from_generator=True):
+    def synthesize(self, n, batch_size=500, from_generator=True, test=None, dt=None):
         self.ae.decoder.eval()
         self.generator.eval()
         sta = []
@@ -20,25 +22,73 @@ class Physio2012(AeGAN):
 
         def _gen(n):
             with torch.no_grad():
-                z = torch.randn(n, self.params['noise_dim']).to(self.device)
-                hidden = self.generator(z)
-                if from_generator == False:
-                    z = torch.randn_like(hidden)
-                statics = self.ae.decoder.generate_statics(hidden)
-                df_sta = self.static_processor.inverse_transform(
-                    statics.cpu().numpy())
-                max_len = int(df_sta['seq_len'].max())
-                sta.append(df_sta)
-                cur_len = df_sta['seq_len'].values.astype(int).tolist()
-                dynamics, missing, times = self.ae.decoder.generate_dynamics(
-                    hidden, statics, max_len)
-                dynamics = dynamics.cpu().numpy()
-                missing = missing.cpu().numpy()
-                times = times.cpu().numpy()
-                for i, length in enumerate(cur_len):
-                    d = self.dynamic_processor.inverse_transform(
-                        dynamics[i, :length], missing[i, :length], times[i, :length])
-                    dyn.append(d)
+                if (test is None) or True:
+                    z = torch.randn(
+                        n, self.params['noise_dim']).to(self.device)
+                    hidden = self.generator(z)
+                    hidden = test[0][:n]
+                    # if from_generator == False:
+                    #     hidden = torch.randn_like(hidden)
+
+                    # GENERATE STATICS
+                    statics = self.ae.decoder.generate_statics(hidden)
+                    df_sta = self.static_processor.inverse_transform(
+                        statics.cpu().numpy())
+                    # self.static_processor.inverse_transform(test[1][:9].cpu().numpy())
+                    max_len = int(df_sta['seq_len'].max())
+                    sta.append(df_sta)
+                    cur_len = df_sta['seq_len'].values.astype(int).tolist()
+
+                    # GENERATE DYNAMICS
+                    dynamics, missing, times = self.ae.decoder.generate_dynamics2(
+                        hidden, statics, max_len, dt=dt)
+                    dynamics = dynamics.cpu().numpy()
+                    missing = missing.cpu().numpy()
+
+                    # # # DEBUG
+                    # # hidden, sta2, dyn2, lag, mask, priv, times, seq_len = test
+                    # # gen_sta, dynamics, missing, times = self.ae.decoder(
+                    # #     hidden, sta2, dyn2, lag, mask, priv, times, seq_len, dt=dt, forcing=1)
+
+                    # # dynamics = dynamics.cpu().numpy()
+                    # # missing = missing.cpu().numpy()
+
+                    # # df_sta = self.static_processor.inverse_transform(
+                    # #     gen_sta.cpu().numpy())
+                    # # # self.static_processor.inverse_transform(test[1][:9].cpu().numpy())
+                    # # max_len = int(df_sta['seq_len'].max())
+                    # # sta.append(df_sta.iloc[:n])
+                    # # cur_len = df_sta['seq_len'].values.astype(int).tolist()
+
+                    if dt is not None:
+                        value_max = 0.5109656108798026
+                        times = -1.7 + (times*value_max).cumsum(1)
+                        times = times.cpu().numpy()
+                    else:
+                        times = times.cpu().numpy()
+
+                    for i, length in enumerate(cur_len[:n]):
+                        d = self.dynamic_processor.inverse_transform(
+                            dynamics[i, :length], missing[i, :length], times[i, :length])
+                        dyn.append(d)
+                else:
+                    #  real_rep, sta, dyn, lag, mask, priv, times, seq_len
+                    statics, dynamics, missing, times = self.ae.decoder(*test)
+
+                    df_sta = self.static_processor.inverse_transform(
+                        statics[:n, :].cpu().numpy())
+                    max_len = int(df_sta['seq_len'].max())
+                    sta.append(df_sta)
+                    cur_len = df_sta['seq_len'].values.astype(int).tolist()
+
+                    dynamics = dynamics.cpu().numpy()
+                    missing = missing.cpu().numpy()
+                    times = times.cpu().numpy()
+
+                    for i, length in enumerate(cur_len):
+                        d = self.dynamic_processor.inverse_transform(
+                            dynamics[i, :length], missing[i, :length], times[i, :length])
+                        dyn.append(d)
 
         tt = n // batch_size
         for i in range(tt):

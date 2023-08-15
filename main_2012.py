@@ -59,9 +59,9 @@ parser.add_argument("--ae-batch-size", default=128, dest="ae_batch_size", type=i
                     help="Minibatch size for autoencoder")
 parser.add_argument("--gan-batch-size", default=512, dest="gan_batch_size", type=int,
                     help="Minibatch size for WGAN")
-parser.add_argument("--embed-dim", default=512,
+parser.add_argument("--embed-dim", default=96,
                     dest="embed_dim", type=int, help="dim of hidden state")
-parser.add_argument("--hidden-dim", default=128,
+parser.add_argument("--hidden-dim", default=24,
                     dest="hidden_dim", type=int, help="dim of GRU hidden state")
 parser.add_argument("--layers", default=3, dest="layers",
                     type=int, help="layers")
@@ -76,7 +76,7 @@ parser.add_argument("--gan-lr", default=1e-4, dest="gan_lr",
                     type=float, help="GAN learning rate")
 parser.add_argument("--gan-alpha", default=0.99,
                     dest="gan_alpha", type=float, help="for RMSprop")
-parser.add_argument("--noise-dim", default=512, dest="noise_dim",
+parser.add_argument("--noise-dim", default=96, dest="noise_dim",
                     type=int, help="dim of WGAN noise state")
 
 options = parser.parse_args()
@@ -116,8 +116,14 @@ dataset = pickle.load(open(options.dataset, "rb"))
 train_set = dataset["train_set"]
 dynamic_processor = dataset["dynamic_processor"]
 static_processor = dataset["static_processor"]
-train_set.set_input("dyn", "mask", "sta", "times", "lag",
-                    "seq_len", "priv", "nex", "label")
+
+
+if dataset['train_set'].has_field('dt'):
+    train_set.set_input("dyn", "mask", "sta", "times", "lag",
+                        "seq_len", "priv", "nex", "label", "dt")
+else:
+    train_set.set_input("dyn", "mask", "sta", "times", "lag",
+                        "seq_len", "priv", "nex", "label")
 
 if options.debug:
     train_set = train_set[0:DEBUG_SCALE]

@@ -56,13 +56,20 @@
 
                 // syn irregular
 
-                "--dataset", "./data/physio_data/sine_irreg.pkl",
+                // "--dataset", "./data/physio_data/sine_irreg_inhom.pkl",
+                "--dataset", "./data/physio_data/full2012.pkl",
                 "--log-dir", "./sine_irr_result",
-                "--task-name", "temp1",
+                "--task-name", "physio_MDN_StepLR_small_wd",
                 "--python-seed", "1374",
-                "--epochs", "50",
+                "--epochs", "150",
+                "--hidden-dim","8",
+                // "--dropout","0.2",
+                // "--ae-lr", "3e-4",
                 // "--fix-ae", "sine_irr_result/temp/ae.dat",
                 "--vae",
+                "--ae-lr", "3e-3",
+                "--weight-decay", "1e-4",
+                "--ae-batch-size", "256",
 
                 "--iterations", "1000"
 

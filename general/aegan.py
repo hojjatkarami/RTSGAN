@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
+import pickle
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -25,6 +26,10 @@ import plotly.graph_objects as go
 from MulticoreTSNE import MulticoreTSNE as TSNE
 
 TIME_CONST = 0
+TIME_NORM = True
+
+with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:
+    pt = pickle.load(f)
 
 
 class AeGAN:
@@ -176,7 +181,7 @@ class AeGAN:
         mean, log_variance, raw_weight = torch.split(
             mixture_params, num_components, dim=-1)
         # Apply softplus transformation to ensure non-negative weights
-        mean = nn.functional.softplus(mean)
+        # mean = nn.functional.softplus(mean)
         weight = nn.Softmax(dim=-1)(raw_weight)
 
         variance = torch.exp(log_variance)
@@ -620,6 +625,11 @@ class AeGAN:
 
                     temp = times.diff(
                         axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
+                    if TIME_NORM:
+                        # temp = (temp-0.03)/0.01
+                        temp = torch.from_numpy(pt.transform(
+                            temp.cpu().numpy().reshape(-1, 1))).to(temp.device).reshape(temp.shape)
+
                     mask_len = seq_len_to_mask(
                         seq_len).unsqueeze(-1)  # False means masked
                     dt_true = (mask_len*temp)
@@ -627,7 +637,13 @@ class AeGAN:
                     if hasattr(self.ae.decoder, 'fc_mdn'):
                         # mixture_params = mdn(gt, dt_true, seq_len)
                         mixture_params = torch.zeros_like(gt)
+                        # if TIME_NORM:
+                        #     gt = gt*0.01+0.03
                         loss4, gt = self.mdn_loss(gt, dt_true, seq_len)
+                        if TIME_NORM:
+                            # gt = gt*0.01+0.03
+                            gt = torch.from_numpy(pt.inverse_transform(
+                                gt.detach().cpu().numpy().reshape(-1, 1))).to(gt.device).reshape(gt.shape)
 
                         # baseline mdn (handcrafted)
                         # mixture_params[:, :, 0] = 0.0034

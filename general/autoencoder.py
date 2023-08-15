@@ -7,8 +7,13 @@ from torch.nn import functional as F
 from fastNLP import seq_len_to_mask
 from basic import PositionwiseFeedForward, PositionalEncoding, TimeEncoding, max_pooling, mean_pooling
 import random
+import pickle
 TIME_CONST = 0
 TIME_NORM = True
+
+
+with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:
+    pt = pickle.load(f)
 
 
 def time_activation(x):
@@ -186,7 +191,8 @@ class TransformerVariationalEncoder(nn.Module):
                 axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
             # shifted_mask = torch.cat((mask_len[:, 1:], torch.zeros(mask_len.shape[0], 1,1,device=mask_len.device)), dim=1)
             if TIME_NORM:
-                temp = (temp-0.03)/0.01
+                # temp = (temp-0.03)/0.01
+                temp = torch.from_numpy(pt.transform(temp.cpu().numpy().reshape(-1,1))).to(temp.device).reshape(temp.shape)
             priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
 
             # CHECK out.sum()==0
@@ -615,7 +621,8 @@ class TransformerDecoder(nn.Module):
                 temp = times.diff(
                     axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
                 if TIME_NORM:
-                    temp = (temp-0.03)/0.01
+                    # temp = (temp-0.03)/0.01
+                    temp = torch.from_numpy(pt.transform(temp.cpu().numpy().reshape(-1,1))).to(temp.device).reshape(temp.shape)
                 priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
                 pad_priv = pad_zero(priv)
             else:

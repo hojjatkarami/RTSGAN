@@ -13,8 +13,8 @@ class MissingProcessor:
         if which in ["binary", "categorical"]:
             self.model = LabelBinarizer()
         else:
-            # self.model = MinMaxScaler()
-            self.model = StandardScaler()
+            self.model = MinMaxScaler()
+            # self.model = StandardScaler()
         self.which = which
         self.missing = False
         self.non = None

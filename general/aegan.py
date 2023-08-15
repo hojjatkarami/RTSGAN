@@ -176,6 +176,7 @@ class AeGAN:
         mean, log_variance, raw_weight = torch.split(
             mixture_params, num_components, dim=-1)
         # Apply softplus transformation to ensure non-negative weights
+        mean = nn.functional.softplus(mean)
         weight = nn.Softmax(dim=-1)(raw_weight)
 
         variance = torch.exp(log_variance)
@@ -349,7 +350,15 @@ class AeGAN:
             xaxis=dict(scaleanchor="y", scaleratio=1),
             yaxis=dict(scaleanchor="x", scaleratio=1)
         )
-        return fig2
+        fig2.add_shape(
+            type='line',
+            x0=df['X'].min(),
+            y0=df['X'].min(),
+            x1=df['X'].max(),
+            y1=df['X'].max(),
+            line=dict(color='red', width=2)
+        )
+        return fig, fig2
 
     def train_ae(self, dataset, epochs=800):
         min_loss = 1e15
@@ -724,7 +733,7 @@ class AeGAN:
                 seq_len_pred = self.static_processor.inverse_transform(
                     out_sta.detach().cpu().numpy()).iloc[:, -1].values
 
-                fig_AE_rec = self.plot_ae(
+                fig_AE_rec, fig2 = self.plot_ae(
                     dyn, times, mask, seq_len.detach().cpu().numpy(),
                     out_dyn, gt, missing, seq_len_pred)
 
@@ -773,6 +782,7 @@ class AeGAN:
                     {"example_AE_syn": wandb.Plotly(fig_AE_syn),
                      "vae": wandb.Plotly(fig_vae),
                      "example_rec": wandb.Plotly(fig_AE_rec),
+                     "dt_corr": wandb.Plotly(fig2),
                      "tsne_AE": wandb.Plotly(fig_tsne)}, step=i)
             if i % 100 == 99:
                 torch.save(self.ae.state_dict(),

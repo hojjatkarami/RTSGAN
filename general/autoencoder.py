@@ -7,6 +7,8 @@ from torch.nn import functional as F
 from fastNLP import seq_len_to_mask
 from basic import PositionwiseFeedForward, PositionalEncoding, TimeEncoding, max_pooling, mean_pooling
 import random
+TIME_CONST = 0
+TIME_NORM = True
 
 
 def time_activation(x):
@@ -181,9 +183,10 @@ class TransformerVariationalEncoder(nn.Module):
             # dt1(t1-(-1.7)) | dt2(t2-t1) .... dt_{L}
             # temp = times.diff(axis=1)
             temp = times.diff(
-                axis=1, prepend=-1.7*torch.ones((times.shape[0], 1, 1), device=times.device))
+                axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
             # shifted_mask = torch.cat((mask_len[:, 1:], torch.zeros(mask_len.shape[0], 1,1,device=mask_len.device)), dim=1)
-
+            if TIME_NORM:
+                temp = (temp-0.03)/0.01
             priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
 
             # CHECK out.sum()==0
@@ -610,7 +613,9 @@ class TransformerDecoder(nn.Module):
                     seq_len).unsqueeze(-1)  # False means masked
 
                 temp = times.diff(
-                    axis=1, prepend=-1.7*torch.ones((times.shape[0], 1, 1), device=times.device))
+                    axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
+                if TIME_NORM:
+                    temp = (temp-0.03)/0.01
                 priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
                 pad_priv = pad_zero(priv)
             else:
@@ -629,7 +634,7 @@ class TransformerDecoder(nn.Module):
 
             # Create subsequent mask
             tgt_subsequent_mask = torch.triu(torch.ones(
-                max_seq_len, max_seq_len), diagonal=0).bool().to(x.device)
+                max_seq_len, max_seq_len), diagonal=1).bool().to(x.device)
             tgt_key_padding_mask = torch.arange(max_seq_len, device=seq_len.device)[
                 None, :] >= seq_len[:, None]
 

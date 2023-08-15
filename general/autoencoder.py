@@ -629,7 +629,7 @@ class TransformerDecoder(nn.Module):
 
             # Create subsequent mask
             tgt_subsequent_mask = torch.triu(torch.ones(
-                max_seq_len, max_seq_len), diagonal=1).bool().to(x.device)
+                max_seq_len, max_seq_len), diagonal=0).bool().to(x.device)
             tgt_key_padding_mask = torch.arange(max_seq_len, device=seq_len.device)[
                 None, :] >= seq_len[:, None]
 

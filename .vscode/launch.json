@@ -59,7 +59,7 @@
                 // "--dataset", "./data/physio_data/sine_irreg_inhom.pkl",
                 "--dataset", "./data/physio_data/full2012.pkl",
                 "--log-dir", "./sine_irr_result",
-                "--task-name", "physio_MDN_StepLR_small_wd_bs64_softplus",
+                "--task-name", "physio_MDN_StepLR_small_wd_bs64_softplus_diag2",
                 "--python-seed", "1374",
                 "--epochs", "150",
                 "--hidden-dim","4",
@@ -67,10 +67,10 @@
                 // "--ae-lr", "3e-4",
                 // "--fix-ae", "sine_irr_result/temp/ae.dat",
                 "--vae",
-                "--ae-lr", "1e-2",
+                "--ae-lr", "3e-3",
                 "--weight-decay", "1e-4",
                 "--ae-batch-size", "64",
-
+                // "--dropout","0.2",
                 "--iterations", "1000"
 
             ]

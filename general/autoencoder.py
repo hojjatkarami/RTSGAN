@@ -10,7 +10,7 @@ from basic import PositionwiseFeedForward, PositionalEncoding, TimeEncoding, max
 import random
 import pickle
 TIME_CONST = 0
-TIME_NORM = False
+TIME_NORM = True
 ENC_MASK = True
 POSENC = True
 HH = 1
@@ -696,7 +696,7 @@ class TransformerDecoder(nn.Module):
             out = self.transformer_decoder(
                 tgt=x,
                 memory=z_expanded,
-                tgt_mask=tgt_subsequent_mask,
+                # tgt_mask=tgt_subsequent_mask,
                 tgt_key_padding_mask=tgt_key_padding_mask,
                 # memory_mask=subsequent_mask,
             )  # bs, max_len, hidden_dim

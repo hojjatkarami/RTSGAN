@@ -26,7 +26,7 @@ import plotly.graph_objects as go
 from MulticoreTSNE import MulticoreTSNE as TSNE
 
 TIME_CONST = 0
-TIME_NORM = False
+TIME_NORM = True
 ENC_MASK = False
 MDN = True
 HH = 1

@@ -14,7 +14,7 @@ class MissingProcessor:
             self.model = LabelBinarizer()
         else:
             self.model = MinMaxScaler()
-            # self.model = StandardScaler()
+            self.model = StandardScaler()
         self.which = which
         self.missing = False
         self.non = None

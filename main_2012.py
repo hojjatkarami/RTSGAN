@@ -24,7 +24,7 @@ if True:
 
 load_dotenv()
 wandb.login(key=os.getenv("WANDB_KEY"))
-
+# torch.autograd.set_detect_anomaly(True)
 
 DEBUG_SCALE = 512
 # ===-----------------------------------------------------------------------===

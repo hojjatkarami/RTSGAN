@@ -27,7 +27,8 @@ from MulticoreTSNE import MulticoreTSNE as TSNE
 
 TIME_CONST = 0
 TIME_NORM = False
-
+ENC_MASK = False
+HH = 1
 with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:
     pt = pickle.load(f)
 
@@ -172,36 +173,44 @@ class AeGAN:
         return torch.mean(loss)  # scalar
 
     def mdn_loss(self, mixture_params, target, seq_len):
-
+        loss_list = []
         seq_mask = seq_len_to_mask(seq_len)  # batch_size, max_len
 
         # MDN loss function
         # Split mixture parameters into mean, variance, and weight components
-        num_components = mixture_params.shape[-1]//3
-        mean, log_variance, raw_weight = torch.split(
-            mixture_params, num_components, dim=-1)
-        # Apply softplus transformation to ensure non-negative weights
-        # mean = nn.functional.softplus(mean)
-        weight = nn.Softmax(dim=-1)(raw_weight)
+        num_components = mixture_params.shape[-1]//(3*HH)
+        temp = torch.split(
+            mixture_params, mixture_params.shape[-1]//HH, dim=-1)
+        for iii in range(HH):
+            mean, log_variance, raw_weight = torch.split(
+                temp[iii], num_components, dim=-1)
+            # Apply softplus transformation to ensure non-negative weights
+            # mean = nn.functional.softplus(mean)
+            weight = nn.Softmax(dim=-1)(raw_weight)
 
-        variance = torch.exp(log_variance)
+            variance = torch.exp(log_variance)
+            # Calculate the negative log-likelihood of the target given the mixture parameters
+            # [bs, max_len, 3]
+            log_prob = -0.5 * torch.log(2 * np.pi * variance) - \
+                0.5 * ((target - mean) ** 2) / variance
+            log_weighted_prob = log_prob + torch.log(weight)
+            # log_weighted_prob = log_weighted_prob.masked_fill(~seq_mask.unsqueeze(-1),-1e9)
+            loss = -torch.logsumexp(log_weighted_prob,
+                                    dim=-1)  # [bs, max_len]
+            aa = torch.ones_like(seq_mask)
+            aa[:, :iii] = 0
+            seq_mask2 = seq_mask*aa
+            # seq_mask2[:, :iii] = 0
 
-        # Calculate the negative log-likelihood of the target given the mixture parameters
-        # [bs, max_len, 3]
-        log_prob = -0.5 * torch.log(2 * np.pi * variance) - \
-            0.5 * ((target - mean) ** 2) / variance
-        log_weighted_prob = log_prob + torch.log(weight)
-        # log_weighted_prob = log_weighted_prob.masked_fill(~seq_mask.unsqueeze(-1),-1e9)
-        loss = -torch.logsumexp(log_weighted_prob,
-                                dim=-1)  # [bs, max_len]
-        loss = torch.masked_select(loss, seq_mask)
-
-        # gt new
-        # mean, _, raw_weight = torch.split(gt, 3, dim=-1)
-        max_idx = torch.argmax(log_weighted_prob, dim=-1)
-        # point_predictions = mean[torch.arange(mean.size(0)),torch.arange(mean.size(1)), max_idx]
-        # [bs, max_len, 1]
-        target_point_estimate = torch.gather(mean, 2, max_idx.unsqueeze(-1))
+            loss_list.append(torch.masked_select(loss, seq_mask2).mean())
+            if iii == 0:
+                # gt new
+                # mean, _, raw_weight = torch.split(gt, 3, dim=-1)
+                max_idx = torch.argmax(log_weighted_prob, dim=-1)
+                # point_predictions = mean[torch.arange(mean.size(0)),torch.arange(mean.size(1)), max_idx]
+                # [bs, max_len, 1]
+                target_point_estimate = torch.gather(
+                    mean, 2, max_idx.unsqueeze(-1))
 
         # # discrete loss function
         # num_classes = mixture_params.shape[-1]
@@ -234,7 +243,7 @@ class AeGAN:
         #     [0.0020, 0.0050, 0.0080, 0.0100, 0.014, 0.0160, 0.0190, 0.0210,]).to(target.device)
         # target_point_estimate = midpoints[bin_indices].unsqueeze(-1)
 
-        return torch.mean(loss), target_point_estimate
+        return sum(loss_list), target_point_estimate
 
     def missing_loss(self, data, target, seq_len):  # data (batch_size, seq_len, 35)
         thr = torch.Tensor(
@@ -783,6 +792,9 @@ class AeGAN:
                     #     {"example_AE_syn": wandb.Plotly(fig_AE_syn)}, step=i)
                 else:
                     real_rep = out
+
+                if len(real_rep.shape) == 3:
+                    real_rep = real_rep[:, -1, :]
                 # plot t-SNE
                 tsne = TSNE(n_components=2, perplexity=30,
                             learning_rate=10, n_jobs=4)

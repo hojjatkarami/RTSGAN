@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
+import math
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -10,10 +11,52 @@ import random
 import pickle
 TIME_CONST = 0
 TIME_NORM = False
-
-
+ENC_MASK = True
+POSENC = True
+HH = 1
 with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:
     pt = pickle.load(f)
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_input, d_model, max_len):
+        super(PositionalEncoding, self).__init__()
+        self.d_model = d_model
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(
+            0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe) # (1, max_len, d_model)
+        self.fc = nn.Linear(d_input, d_model)
+
+    def forward(self, x, times):
+        return self.fc(x) + self.pe[:, :x.size(1)]
+
+# class PositionalEncoding(nn.Module):
+#     def __init__(self, d_input, d_model, max_len):
+#         super(PositionalEncoding, self).__init__()
+#         self.dropout = nn.Dropout(0.1)
+
+#         pe = torch.zeros(max_len, d_model)
+#         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+#         div_term = torch.exp(torch.arange(
+#             0, d_model, 2).float() * (-math.log(10000.0) / d_model)) # 1/10000^(2i/d_model) of shape (d_model/2)
+
+#         pe[:, 0::2] = torch.sin(position * div_term)
+#         pe[:, 1::2] = torch.cos(position * div_term)
+#         pe = pe.unsqueeze(0).transpose(0, 1)
+
+#         # pe.shape = (max_len, 1, d_model)
+#         self.register_buffer('pe', pe)
+#         self.fc = nn.Linear(d_input, d_model)
+
+#     def forward(self, x, times):
+#         x = self.fc(x) + self.pe[:x.size(0), :]
+#         return self.dropout(x)
 
 
 def time_activation(x):
@@ -153,6 +196,8 @@ class TransformerVariationalEncoder(nn.Module):
         self.hidden_dim = hidden_dim
         self.layers = layers
         self.embed = Embedding(input_dim, hidden_dim, dropout)
+        if POSENC:
+            self.embed = PositionalEncoding(input_dim, hidden_dim, 1000)
         self.rnn = nn.GRU(hidden_dim, hidden_dim, layers,
                           batch_first=True, bidirectional=False, dropout=dropout)
 
@@ -192,7 +237,8 @@ class TransformerVariationalEncoder(nn.Module):
             # shifted_mask = torch.cat((mask_len[:, 1:], torch.zeros(mask_len.shape[0], 1,1,device=mask_len.device)), dim=1)
             if TIME_NORM:
                 # temp = (temp-0.03)/0.01
-                temp = torch.from_numpy(pt.transform(temp.cpu().numpy().reshape(-1,1))).to(temp.device).reshape(temp.shape)
+                temp = torch.from_numpy(pt.transform(
+                    temp.cpu().numpy().reshape(-1, 1))).to(temp.device).reshape(temp.shape)
             priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
 
             # CHECK out.sum()==0
@@ -217,36 +263,26 @@ class TransformerVariationalEncoder(nn.Module):
         src_key_padding_mask = torch.arange(max_seq_len, device=seq_len.device)[
             None, :] >= seq_len[:, None]
 
-        transformer_output = self.transformer_encoder(
-            x, src_key_padding_mask=src_key_padding_mask)
-        # Aggregate over sequence dimension
-        mu = self.fc_mu(transformer_output.mean(dim=1))
-        # Aggregate over sequence dimension
-        logvar = self.fc_logvar(transformer_output.mean(dim=1))
+        if ENC_MASK:
 
-        # # h, c = h
-        # # layers, 1, bs, hidden_dim
-        # h = h.view(self.layers, -1, bs, self.hidden_dim)
-        # h1, _ = max_pooling(out, seq_len)  # bs, hidden_dim
-        # h2 = mean_pooling(out, seq_len)  # bs, hidden_dim
-        # h3 = h[-1].view(bs, -1)  # bs, hidden_dim
-        # glob = torch.cat([h1, h2, h3], dim=-1)  # bs, hidden_dim*3
-        # # bs, hidden_dim [s in paper]
-        # glob = self.final(self.fc(self.drop(glob)))
+            # with mask
+            # Create subsequent mask
+            src_subsequent_mask = torch.triu(torch.ones(
+                max_seq_len, max_seq_len), diagonal=1).bool().to(x.device)
+            transformer_output = self.transformer_encoder(
+                x, mask=src_subsequent_mask, src_key_padding_mask=src_key_padding_mask)
 
-        # # hf = h[:,0]
-        # # hb = h[:,1]
-        # # lasth = self.final(self.fc1(torch.cat([hf,hb], dim=-1)))
-        # lasth = h.view(-1, bs, self.hidden_dim)  # layers, bs, hidden_dim
+            mu = self.fc_mu(transformer_output)  # bs, max_len, hidden_dim*4
+            logvar = self.fc_logvar(transformer_output)
+        else:
+            # # WO mask
+            transformer_output = self.transformer_encoder(x,
+                                                          src_key_padding_mask=src_key_padding_mask)
+            # Aggregate over sequence dimension
+            mu = self.fc_mu(transformer_output.mean(dim=1))  # bs, hidden_dim*4
+            # Aggregate over sequence dimension
+            logvar = self.fc_logvar(transformer_output.mean(dim=1))
 
-        # lasth = lasth.permute(1, 0, 2).contiguous().view(
-        #     bs, -1)  # bs, layers*hidden_dim
-        # lasth = self.final(self.fc1(self.drop(lasth)))
-        # # bs, hidden_dim*(layers+1)   r = [s, {h} in paper]
-        # hidden = torch.cat([glob, lasth], dim=-1)
-
-        # mu = self.encoder_mu(hidden)
-        # logvar = self.encoder_logvar(hidden)
         return mu, logvar
 
 
@@ -566,6 +602,9 @@ class TransformerDecoder(nn.Module):
                           batch_first=True, dropout=dropout)
         self.miss_rnn = nn.GRU(hidden_dim, hidden_dim,
                                layers-1, batch_first=True, dropout=dropout)
+        if POSENC:
+            self.embed = PositionalEncoding(dynamics_dim + self.s_dim +
+                                            statics_dim + self.miss_dim, hidden_dim, 1000)
 
         self.statics_fc = nn.Linear((layers+1)*hidden_dim, statics_dim)
         self.dynamics_fc = nn.Linear(hidden_dim, dynamics_dim)
@@ -587,7 +626,11 @@ class TransformerDecoder(nn.Module):
 
         self.fc = nn.Linear(4*hidden_dim, hidden_dim)
         mdn_num_components = 3
-        self.fc_mdn = nn.Linear(hidden_dim, mdn_num_components*3)
+        self.fc_mdn = nn.Linear(hidden_dim, HH*mdn_num_components*3)
+        # self.fc_mdn2 = nn.Linear(hidden_dim, mdn_num_components*3)
+        # self.fc_mdn3 = nn.Linear(hidden_dim, mdn_num_components*3)
+        # self.fc_mdn4 = nn.Linear(hidden_dim, mdn_num_components*3)
+        # self.fc_mdn5 = nn.Linear(hidden_dim, mdn_num_components*3)
         # self.fc_mdn = nn.Linear(hidden_dim, 8)
         # self.fc_mu = nn.Linear(hidden_dim, hidden_dim*4)
         # self.fc_logvar = nn.Linear(hidden_dim, hidden_dim*4)
@@ -597,53 +640,58 @@ class TransformerDecoder(nn.Module):
     # embed.shape = bs, hidden_dim*(layers+1)
     def forward(self, embed, sta, dynamics, lag, mask, priv, times, seq_len, dt=None, forcing=11):
         # glob is s in the paper [bs, hidden_dim]
-        glob, hidden = embed[:, :self.hidden_dim], embed[:, self.hidden_dim:]
-        statics_x = self.statics_fc(embed)  # bs, statics_dim
+        # glob, hidden = embed[:, :self.hidden_dim], embed[:, self.hidden_dim:]
+        if len(embed.shape) == 2:
+            statics_x = self.statics_fc(embed)  # bs, statics_dim
+        else:
+            statics_x = self.statics_fc(embed[:, -1, :])  # bs, statics_dim
         gen_sta = apply_activation(self.s_P, statics_x)  # bs, statics_dim
 
         bs, max_len, _ = dynamics.size()
-        hidden = embed.view(bs, self.layers+1, -1).permute(1,
-                                                           0, 2).contiguous()  # layers, bs, hidden_dim
+        # hidden = embed.view(bs, self.layers+1, -1).permute(1,
+        #                                                    0, 2).contiguous()  # layers, bs, hidden_dim
         # hidden, finh = hidden[:-1], hidden[-1:]
 
-        if forcing >= 1:
-            # bs, max_len, dynamics_dim (right shift of dynamics across second dim)
-            pad_dynamics = pad_zero(dynamics)
-            pad_mask = pad_zero(mask)
-            pad_times = pad_zero(times)
-            if dt is not None:
-                # pad_priv = pad_zero(dt.expand([-1, -1, 2]))
+        # bs, max_len, dynamics_dim (right shift of dynamics across second dim)
+        pad_dynamics = pad_zero(dynamics)
+        pad_mask = pad_zero(mask)
+        pad_times = pad_zero(times)
+        if dt is not None:
+            # pad_priv = pad_zero(dt.expand([-1, -1, 2]))
 
-                # NEW METHOD
-                mask_len = seq_len_to_mask(
-                    seq_len).unsqueeze(-1)  # False means masked
+            # NEW METHOD
+            mask_len = seq_len_to_mask(
+                seq_len).unsqueeze(-1)  # False means masked
 
-                temp = times.diff(
-                    axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
-                if TIME_NORM:
-                    # temp = (temp-0.03)/0.01
-                    temp = torch.from_numpy(pt.transform(temp.cpu().numpy().reshape(-1,1))).to(temp.device).reshape(temp.shape)
-                priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
-                pad_priv = pad_zero(priv)
-            else:
-                pad_priv = pad_zero(priv)
-            # bs, max_len, statics_dim
-            sta_expand = sta.unsqueeze(1).expand(-1, max_len, -1)
-            glob_expand = glob.unsqueeze(
-                1).expand(-1, max_len, -1)  # bs, max_len, hidden_dim
-            # bs, max_len, dynamics_dim*3 + statics_dim
-            x = torch.cat([sta_expand, pad_dynamics,
-                          pad_priv, pad_mask], dim=-1)
-            x = self.embed(x, pad_times)  # bs, max_len, hidden_dim
-            max_seq_len = x.size(1)
+            temp = times.diff(
+                axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
+            if TIME_NORM:
+                # temp = (temp-0.03)/0.01
+                temp = torch.from_numpy(pt.transform(
+                    temp.cpu().numpy().reshape(-1, 1))).to(temp.device).reshape(temp.shape)
+            priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
+            pad_priv = pad_zero(priv)
+        else:
+            pad_priv = pad_zero(priv)
+        # bs, max_len, statics_dim
+        sta_expand = sta.unsqueeze(1).expand(-1, max_len, -1)
+        # glob_expand = glob.unsqueeze(
+        #     1).expand(-1, max_len, -1)  # bs, max_len, hidden_dim
+        # bs, max_len, dynamics_dim*3 + statics_dim
+        x = torch.cat([sta_expand, pad_dynamics,
+                       pad_priv, pad_mask], dim=-1)
+        x = self.embed(x, pad_times)  # bs, max_len, hidden_dim
+        max_seq_len = x.size(1)
+
+        # Create subsequent mask
+        tgt_subsequent_mask = torch.triu(torch.ones(
+            max_seq_len, max_seq_len), diagonal=1).bool().to(x.device)
+        tgt_key_padding_mask = torch.arange(max_seq_len, device=seq_len.device)[
+            None, :] >= seq_len[:, None]
+
+        if len(embed.shape) == 2:
             z_expanded = self.fc(embed.unsqueeze(1).repeat(
                 1, max_seq_len, 1))  # bs, max_len, hidden_dim
-
-            # Create subsequent mask
-            tgt_subsequent_mask = torch.triu(torch.ones(
-                max_seq_len, max_seq_len), diagonal=1).bool().to(x.device)
-            tgt_key_padding_mask = torch.arange(max_seq_len, device=seq_len.device)[
-                None, :] >= seq_len[:, None]
 
             out = self.transformer_decoder(
                 tgt=x,
@@ -652,128 +700,57 @@ class TransformerDecoder(nn.Module):
                 tgt_key_padding_mask=tgt_key_padding_mask,
                 # memory_mask=subsequent_mask,
             )  # bs, max_len, hidden_dim
-
-            # packed = nn.utils.rnn.pack_padded_sequence(
-            #     x, seq_len.cpu(), batch_first=True, enforce_sorted=False)
-
-            # # h layers-1, bs, hidden_dim
-            # out, h = self.miss_rnn(packed, hidden)
-            # out, _ = torch.nn.utils.rnn.pad_packed_sequence(
-            #     out, batch_first=True)  # bs, max_len, hidden_dim
-            # diff_times = torch.sigmoid(self.time_fc(out))
-
-            gen_times = time_activation(self.time_fc(
-                out)) + pad_times*0  # bs, max_len, 1
-
-            if hasattr(self, 'fc_mdn'):
-                # bs, max_len, 3*mdn_num_components
-                gen_times = self.fc_mdn(out)
-
-            # gen_times = torch.relu(self.time_fc(out)) + \
-            #     pad_times*0  # bs, max_len, 1
-            # gen_times = (self.time_fc(out)) + pad_times  # bs, max_len, 1
-            # bs, max_len, miss_dim
-            gen_mask = torch.sigmoid(self.miss_fc(out))
-
-            # bs, max_len, latent_dim
-            beta = torch.exp(-torch.relu(
-                self.decay(torch.cat([mask, lag], dim=-1))))
-            y = beta * out
-
-            # bs, max_len, hidden_dim*2
-            # y = torch.cat([y, glob_expand], dim=-1)
-            finh = self.fc_finh(embed)[None, :, :]  # [1,B,h]
-            packed = nn.utils.rnn.pack_padded_sequence(
-                y, seq_len.cpu(), batch_first=True, enforce_sorted=False)
-            out1, finh = self.rnn(packed, finh)  # finh 1, bs, hidden_dim
-            out1, _ = torch.nn.utils.rnn.pad_packed_sequence(
-                out1, batch_first=True)  # bs, max_len, hidden_dim
-
-            dyn = self.dynamics_fc(out)  # bs, max_len, dynamics_dim
-            dyn = apply_activation(
-                self.d_P, dyn.view(-1, self.dynamics_dim)).view(bs, -1, self.dynamics_dim)
         else:
-            true_sta = sta.unsqueeze(1)
-            gsta = gen_sta.detach().unsqueeze(1)
-            glob = glob.unsqueeze(1)
-            dyn = []
-            gen_mask = []
-            gen_times = []
-            cur_x = torch.zeros((bs, 1, self.dynamics_dim)).to(embed.device)
-            gen_p = [torch.zeros((bs, 1, self.s_dim)).to(embed.device)]
-            cur_mask = torch.zeros((bs, 1, self.miss_dim)).to(embed.device)
-            cur_time = torch.zeros((bs, 1, 1)).to(embed.device)
-            thr = torch.Tensor(
-                [model.threshold for model in self.d_P.models if model.missing]).to(embed.device)
-            thr = thr.view(1, 1, self.miss_dim).expand(bs, -1, -1)
-            force = True
-            for i in range(max_len):
-                force = random.random() < forcing
-                if i == 0 or not force:
-                    sta = gsta
-                    pre_x = cur_x
-                    pre_mask = cur_mask.detach()
-                    pre_time = cur_time.detach()
-                else:
-                    sta = true_sta
-                    pre_x = dynamics[:, i-1:i]
-                    pre_mask = mask[:, i-1:i]
-                    pre_time = times[:, i-1:i]
+            z = self.fc(embed)
+            out = self.transformer_decoder(
+                tgt=x,
+                memory=z,
+                # tgt_mask=tgt_subsequent_mask,
+                # memory_mask=tgt_subsequent_mask,
+                tgt_key_padding_mask=tgt_key_padding_mask,
+                memory_key_padding_mask=tgt_key_padding_mask,
+                # memory_mask=subsequent_mask,
+            )  # bs, max_len, hidden_dim
 
-                j = 0
-                st = 0
-                np = gen_p[-1].detach()
-                for model in self.d_P.models:
-                    if model.name == self.d_P.use_pri:
-                        continue
-                    if model.missing:
-                        np[:, :, st:st+model.tgt_len] = np[:, :, st:st+model.tgt_len] * (
-                            1-pre_mask[:, :, j:j+1]) + pre_x[:, :, st:st+model.tgt_len]*pre_mask[:, :, j:j+1]
-                        j += 1
-                    st += model.tgt_len
-                gen_p.append(np)
+        # packed = nn.utils.rnn.pack_padded_sequence(
+        #     x, seq_len.cpu(), batch_first=True, enforce_sorted=False)
 
-                in_x = torch.cat([sta, pre_x, gen_p[i], pre_mask], dim=-1)
-                in_x = self.embed(in_x, pre_time)
+        # # h layers-1, bs, hidden_dim
+        # out, h = self.miss_rnn(packed, hidden)
+        # out, _ = torch.nn.utils.rnn.pad_packed_sequence(
+        #     out, batch_first=True)  # bs, max_len, hidden_dim
+        # diff_times = torch.sigmoid(self.time_fc(out))
 
-                out, hidden = self.miss_rnn(in_x, hidden)
-                cur_time = time_activation(self.time_fc(out))
-                # cur_time = torch.relu(self.time_fc(out))
-                # cur_time = (self.time_fc(out))  # bs, max_len, 1
-                if i == 0:
-                    lg = cur_time.expand(-1, -1, self.miss_dim).detach()
-                else:
-                    lg = (1 - pre_mask) * lg + cur_time.detach()
-                if i > 0:
-                    gen_times.append(cur_time + pre_time)
-                else:
-                    gen_times.append(cur_time)
-                cur_mask = torch.sigmoid(self.miss_fc(out))
-                gen_mask.append(cur_mask)
-                if force:
-                    use_mask = mask[:, i:i+1]
-                else:
-                    use_mask = cur_mask.detach()
+        gen_times = time_activation(self.time_fc(
+            out)) + pad_times*0  # bs, max_len, 1
 
-                beta = torch.exp(-torch.relu(self.decay(
-                    torch.cat([use_mask, lg], dim=-1))))
-                y = torch.cat([out * beta, glob], dim=-1)
+        if hasattr(self, 'fc_mdn'):
+            # bs, max_len, 3*mdn_num_components
+            gen_times = self.fc_mdn(out)
 
-                out, finh = self.rnn(y, finh)
-                out = self.dynamics_fc(out)
-                out = apply_activation(self.d_P, out.squeeze(1)).unsqueeze(1)
-                dyn.append(out)
+        # gen_times = torch.relu(self.time_fc(out)) + \
+        #     pad_times*0  # bs, max_len, 1
+        # gen_times = (self.time_fc(out)) + pad_times  # bs, max_len, 1
+        # bs, max_len, miss_dim
+        gen_mask = torch.sigmoid(self.miss_fc(out))
 
-                x = out.detach()
-                x = self.d_P.re_transform(
-                    x.squeeze(1).cpu().numpy(), use_mask.squeeze(1).cpu().numpy())
-                cur_x = torch.FloatTensor(x).to(embed.device).unsqueeze(1)
-                cur_time = gen_times[-1].detach()
-                cur_mask = (cur_mask > thr).detach().float()
+        # bs, max_len, latent_dim
+        beta = torch.exp(-torch.relu(
+            self.decay(torch.cat([mask, lag], dim=-1))))
+        y = beta * out
 
-            dyn = torch.cat(dyn, dim=1)
-            gen_mask = torch.cat(gen_mask, dim=1)
-            gen_times = torch.cat(gen_times, dim=1)
+        # bs, max_len, hidden_dim*2
+        # y = torch.cat([y, glob_expand], dim=-1)
+        # finh = self.fc_finh(embed)[None, :, :]  # [1,B,h]
+        # packed = nn.utils.rnn.pack_padded_sequence(
+        #     y, seq_len.cpu(), batch_first=True, enforce_sorted=False)
+        # out1, finh = self.rnn(packed, finh)  # finh 1, bs, hidden_dim
+        # out1, _ = torch.nn.utils.rnn.pad_packed_sequence(
+        #     out1, batch_first=True)  # bs, max_len, hidden_dim
+
+        dyn = self.dynamics_fc(out)  # bs, max_len, dynamics_dim
+        dyn = apply_activation(
+            self.d_P, dyn.view(-1, self.dynamics_dim)).view(bs, -1, self.dynamics_dim)
 
         return gen_sta, dyn, gen_mask, gen_times
 

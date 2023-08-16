@@ -28,6 +28,7 @@ from MulticoreTSNE import MulticoreTSNE as TSNE
 TIME_CONST = 0
 TIME_NORM = False
 ENC_MASK = False
+MDN = True
 HH = 1
 with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:
     pt = pickle.load(f)
@@ -643,7 +644,7 @@ class AeGAN:
                         seq_len).unsqueeze(-1)  # False means masked
                     dt_true = (mask_len*temp)
 
-                    if hasattr(self.ae.decoder, 'fc_mdn'):
+                    if MDN:
                         # mixture_params = mdn(gt, dt_true, seq_len)
                         mixture_params = torch.zeros_like(gt)
                         # if TIME_NORM:

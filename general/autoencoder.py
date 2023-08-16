@@ -30,7 +30,7 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe) # (1, max_len, d_model)
+        self.register_buffer('pe', pe)  # (1, max_len, d_model)
         self.fc = nn.Linear(d_input, d_model)
 
     def forward(self, x, times):
@@ -209,7 +209,7 @@ class TransformerVariationalEncoder(nn.Module):
         self.encoder_logvar = nn.Linear(hidden_dim*4, hidden_dim*4)
 
         num_heads = 4
-        num_layers = 2
+        num_layers = 4
         z_dim = 128
         self.transformer_encoder = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(

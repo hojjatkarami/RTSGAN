@@ -10,10 +10,12 @@ from basic import PositionwiseFeedForward, PositionalEncoding, TimeEncoding, max
 import random
 import pickle
 TIME_CONST = 0
-TIME_NORM = True
+TIME_NORM = False
 ENC_MASK = True
 POSENC = True
 HH = 1
+MDN = False
+DT_OPT = True
 with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:
     pt = pickle.load(f)
 
@@ -101,6 +103,22 @@ class Encoder(nn.Module):
         # bs, max_len, statics_dim
         x = statics.unsqueeze(1).expand(-1, max_len, -1)
         # bs, max_len, dynamics_dim*3 + statics_dim
+
+        if self.opt_dt:
+            # priv = dt.expand([-1, -1, 2])
+            mask_len = seq_len_to_mask(
+                seq_len).unsqueeze(-1)  # False means masked
+            # dt1(t1-(-1.7)) | dt2(t2-t1) .... dt_{L}
+            # temp = times.diff(axis=1)
+            temp = times.diff(
+                axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
+            # shifted_mask = torch.cat((mask_len[:, 1:], torch.zeros(mask_len.shape[0], 1,1,device=mask_len.device)), dim=1)
+            if TIME_NORM:
+                # temp = (temp-0.03)/0.01
+                temp = torch.from_numpy(pt.transform(
+                    temp.cpu().numpy().reshape(-1, 1))).to(temp.device).reshape(temp.shape)
+            priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
+
         x = torch.cat([x, dynamics, priv, mask], dim=-1)
         x = self.embed(x, times)  # bs, max_len, hidden_dim
         # x = dynamics
@@ -227,7 +245,7 @@ class TransformerVariationalEncoder(nn.Module):
         x = statics.unsqueeze(1).expand(-1, max_len, -1)
         mask_len = seq_len_to_mask(seq_len).unsqueeze(-1)  # False means masked
         # bs, max_len, dynamics_dim*3 + statics_dim
-        if dt is not None:
+        if self.opt_dt:
             # priv = dt.expand([-1, -1, 2])
 
             # dt1(t1-(-1.7)) | dt2(t2-t1) .... dt_{L}
@@ -346,8 +364,9 @@ def pad_zero(x):
 
 
 class Decoder(nn.Module):
-    def __init__(self, processors, hidden_dim, layers, dropout):
+    def __init__(self, processors, hidden_dim, layers, dropout, opt_dt=False):
         super(Decoder, self).__init__()
+        self.opt_dt = opt_dt
         self.s_P, self.d_P = processors
         self.hidden_dim = hidden_dim
         statics_dim, dynamics_dim = self.s_P.tgt_dim, self.d_P.tgt_dim
@@ -368,8 +387,11 @@ class Decoder(nn.Module):
 
         self.miss_fc = nn.Linear(hidden_dim, self.miss_dim)
         self.time_fc = nn.Linear(hidden_dim, 1)
-
+        if self.opt_dt:
+            mdn_num_components = 3
+            self.fc_mdn = nn.Linear(hidden_dim, HH*mdn_num_components*3)
     # embed: bs, hidden_dim*(layers+1)
+
     def forward(self, embed, sta, dynamics, lag, mask, priv, times, seq_len, forcing=11):
         # glob is s in the paper [bs, hidden_dim]
         glob, hidden = embed[:, :self.hidden_dim], embed[:, self.hidden_dim:]
@@ -386,7 +408,25 @@ class Decoder(nn.Module):
             pad_dynamics = pad_zero(dynamics)
             pad_mask = pad_zero(mask)
             pad_times = pad_zero(times)
-            pad_priv = pad_zero(priv)
+
+            if self.opt_dt:
+                # pad_priv = pad_zero(dt.expand([-1, -1, 2]))
+
+                # NEW METHOD
+                mask_len = seq_len_to_mask(
+                    seq_len).unsqueeze(-1)  # False means masked
+
+                temp = times.diff(
+                    axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
+                if TIME_NORM:
+                    # temp = (temp-0.03)/0.0158
+                    temp = torch.from_numpy(pt.transform(
+                        temp.cpu().numpy().reshape(-1, 1))).to(temp.device).reshape(temp.shape)
+                priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
+                pad_priv = pad_zero(priv)
+            else:
+                pad_priv = pad_zero(priv)
+            # pad_priv = pad_zero(priv)
             # bs, max_len, statics_dim
             sta_expand = sta.unsqueeze(1).expand(-1, max_len, -1)
             glob_expand = glob.unsqueeze(
@@ -403,8 +443,15 @@ class Decoder(nn.Module):
             out, _ = torch.nn.utils.rnn.pad_packed_sequence(
                 out, batch_first=True)  # bs, max_len, hidden_dim
 
-            gen_times = torch.sigmoid(self.time_fc(
-                out)) + pad_times  # bs, max_len, 1
+            if self.opt_dt:
+                gen_times = torch.sigmoid(self.time_fc(
+                    out))
+            else:
+                gen_times = torch.sigmoid(self.time_fc(
+                    out)) + pad_times  # bs, max_len, 1
+            if self.time_mdn:
+                # bs, max_len, 3*mdn_num_components
+                gen_times = self.fc_mdn(out)
             # bs, max_len, miss_dim
             gen_mask = torch.sigmoid(self.miss_fc(out))
 
@@ -587,8 +634,10 @@ class Decoder(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, processors, hidden_dim, layers, dropout):
+    def __init__(self, processors, hidden_dim, layers, dropout, opt_dt=False):
         super(TransformerDecoder, self).__init__()
+        self.opt_dt = opt_dt
+
         self.s_P, self.d_P = processors
         self.hidden_dim = hidden_dim
         statics_dim, dynamics_dim = self.s_P.tgt_dim, self.d_P.tgt_dim
@@ -625,8 +674,9 @@ class TransformerDecoder(nn.Module):
         self.fc_finh = nn.Linear((layers+1)*hidden_dim, hidden_dim)
 
         self.fc = nn.Linear(4*hidden_dim, hidden_dim)
-        mdn_num_components = 3
-        self.fc_mdn = nn.Linear(hidden_dim, HH*mdn_num_components*3)
+        if self.opt_dt:
+            mdn_num_components = 3
+            self.fc_mdn = nn.Linear(hidden_dim, HH*mdn_num_components*3)
         # self.fc_mdn2 = nn.Linear(hidden_dim, mdn_num_components*3)
         # self.fc_mdn3 = nn.Linear(hidden_dim, mdn_num_components*3)
         # self.fc_mdn4 = nn.Linear(hidden_dim, mdn_num_components*3)
@@ -656,7 +706,7 @@ class TransformerDecoder(nn.Module):
         pad_dynamics = pad_zero(dynamics)
         pad_mask = pad_zero(mask)
         pad_times = pad_zero(times)
-        if dt is not None:
+        if self.opt_dt:
             # pad_priv = pad_zero(dt.expand([-1, -1, 2]))
 
             # NEW METHOD
@@ -666,7 +716,7 @@ class TransformerDecoder(nn.Module):
             temp = times.diff(
                 axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
             if TIME_NORM:
-                # temp = (temp-0.03)/0.01
+                # temp = (temp-0.03)/0.0158
                 temp = torch.from_numpy(pt.transform(
                     temp.cpu().numpy().reshape(-1, 1))).to(temp.device).reshape(temp.shape)
             priv = (mask_len*temp).expand([-1, -1, dynamics.shape[-1]])
@@ -696,7 +746,7 @@ class TransformerDecoder(nn.Module):
             out = self.transformer_decoder(
                 tgt=x,
                 memory=z_expanded,
-                # tgt_mask=tgt_subsequent_mask,
+                tgt_mask=tgt_subsequent_mask,
                 tgt_key_padding_mask=tgt_key_padding_mask,
                 # memory_mask=subsequent_mask,
             )  # bs, max_len, hidden_dim
@@ -705,7 +755,7 @@ class TransformerDecoder(nn.Module):
             out = self.transformer_decoder(
                 tgt=x,
                 memory=z,
-                # tgt_mask=tgt_subsequent_mask,
+                tgt_mask=tgt_subsequent_mask,
                 # memory_mask=tgt_subsequent_mask,
                 tgt_key_padding_mask=tgt_key_padding_mask,
                 memory_key_padding_mask=tgt_key_padding_mask,
@@ -724,7 +774,7 @@ class TransformerDecoder(nn.Module):
         gen_times = time_activation(self.time_fc(
             out)) + pad_times*0  # bs, max_len, 1
 
-        if hasattr(self, 'fc_mdn'):
+        if self.time_mdn:
             # bs, max_len, 3*mdn_num_components
             gen_times = self.fc_mdn(out)
 
@@ -974,14 +1024,20 @@ class TransformerDecoder(nn.Module):
 
 
 class Autoencoder(nn.Module):
-    def __init__(self, processors, hidden_dim, embed_dim, layers, dropout=0.0):
+    def __init__(self, processors, hidden_dim, embed_dim, layers, dropout=0.0, opt_dt=False, time_mdn=False):
         super(Autoencoder, self).__init__()
         print(processors[0].tgt_dim, processors[1].tgt_dim,
               processors[1].miss_dim)
         s_dim = sum([x.tgt_len for x in processors[1].models if x.missing])
         self.encoder = Encoder(processors[0].tgt_dim + processors[1].tgt_dim +
                                s_dim + processors[1].miss_dim, hidden_dim, embed_dim, layers, dropout)
-        self.decoder = Decoder(processors, hidden_dim, layers, dropout)
+        self.decoder = Decoder(processors, hidden_dim,
+                               layers, dropout, opt_dt=opt_dt)
+
+        self.encoder.opt_dt = opt_dt
+        # self.decoder.opt_dt = opt_dt
+        self.encoder.time_mdn = time_mdn
+        self.decoder.time_mdn = time_mdn
         self.decoder.embed = self.encoder.embed
 
     def forward(self, sta, dyn, lag, mask, priv, nex, times, seq_len, forcing=1):
@@ -990,7 +1046,7 @@ class Autoencoder(nn.Module):
 
 
 class VariationalAutoencoder(nn.Module):
-    def __init__(self, processors, hidden_dim, embed_dim, layers, dropout=0.0):
+    def __init__(self, processors, hidden_dim, embed_dim, layers, dropout=0.0, opt_dt=False, time_mdn=False):
         super(VariationalAutoencoder, self).__init__()
         print(processors[0].tgt_dim, processors[1].tgt_dim,
               processors[1].miss_dim)
@@ -998,7 +1054,12 @@ class VariationalAutoencoder(nn.Module):
         self.encoder = TransformerVariationalEncoder(
             processors[0].tgt_dim + processors[1].tgt_dim + s_dim + processors[1].miss_dim, hidden_dim, embed_dim, layers, dropout)
         self.decoder = TransformerDecoder(
-            processors, hidden_dim, layers, dropout)
+            processors, hidden_dim, layers, dropout, opt_dt=opt_dt)
+
+        self.encoder.opt_dt = opt_dt
+        # self.decoder.opt_dt = opt_dt
+        self.encoder.time_mdn = time_mdn
+        self.decoder.time_mdn = time_mdn
         self.decoder.embed = self.encoder.embed
 
     def reparameterize(self, mu, logvar):

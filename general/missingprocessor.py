@@ -5,6 +5,21 @@ from sklearn.preprocessing import MinMaxScaler, RobustScaler, LabelBinarizer, St
 import numpy as np
 import pandas as pd
 
+from sklearn.base import BaseEstimator, TransformerMixin
+
+
+class PlaceholderScaler(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        # This scaler doesn't need to fit to the data, so just return self.
+        return self
+
+    def transform(self, X):
+        # This scaler doesn't perform any transformation, so return the input as-is.
+        return X
+
+    def fit_transform(self, X, y=None):
+        return self.transform(X)
+
 
 class MissingProcessor:
     def __init__(self, threshold=None, which="continuous", name=None, use_pri=None):
@@ -14,7 +29,10 @@ class MissingProcessor:
             self.model = LabelBinarizer()
         else:
             self.model = MinMaxScaler()
-            self.model = StandardScaler()
+            # self.model = StandardScaler()
+            # self.model = PlaceholderScaler()
+        # if name == 'time':
+        #     self.model = PlaceholderScaler()
         self.which = which
         self.missing = False
         self.non = None

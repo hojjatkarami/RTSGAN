@@ -24,14 +24,20 @@ from plotly.subplots import make_subplots
 import plotly.express as px
 import plotly.graph_objects as go
 from MulticoreTSNE import MulticoreTSNE as TSNE
-
+DT_OPT = True
+MDN = False
 TIME_CONST = 0
-TIME_NORM = True
+TIME_NORM = False
 ENC_MASK = False
-MDN = True
 HH = 1
 with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:
     pt = pickle.load(f)
+
+
+def pad_zero(x):
+    input_x = torch.zeros_like(x[:, 0:1, :])
+    input_x = torch.cat([input_x, x[:, :-1, :]], dim=1)
+    return input_x
 
 
 class AeGAN:
@@ -43,12 +49,15 @@ class AeGAN:
         self.logger = params["logger"]
         self.static_processor, self.dynamic_processor = processors
 
+        self.time_mdn = params["time_mdn"]
+        self.opt_dt = params["opt_dt"]
+
         if params["vae"]:
             self.ae = VariationalAutoencoder(
-                processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"])
+                processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"], opt_dt=self.opt_dt, time_mdn=self.time_mdn)
         else:
             self.ae = Autoencoder(
-                processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"])
+                processors, self.params["hidden_dim"], self.params["embed_dim"], self.params["layers"], dropout=self.params["dropout"], opt_dt=self.opt_dt, time_mdn=self.time_mdn)
 
         self.ae.to(self.device)
         """
@@ -339,14 +348,23 @@ class AeGAN:
         # )
 
         # a 1 x 3 subplot
-        fig = make_subplots(rows=1, cols=3, subplot_titles=(
+        fig = make_subplots(rows=3, cols=2, subplot_titles=(
             "S1", "S2", "Correlation"))
         fig.add_trace(go.Scatter(
             x=x_true, y=(x_true-x_pred), mode='markers', name='x', line=dict(color='red')), row=1, col=1)
         fig.add_trace(go.Scatter(
             x=seq_len, y=(seq_len-seq_len_pred), mode='markers', name='seq_len', line=dict(color='red')), row=1, col=2)
         fig.add_trace(go.Scatter(
-            x=dt_true, y=(dt_true-dt_pred), mode='markers', name='dt', line=dict(color='red')), row=1, col=3)
+            x=dt_true, y=(dt_true-dt_pred), mode='markers', name='dt', line=dict(color='red')), row=2, col=1)
+
+        # plot heatmap of masking pattern
+        true_mask = mask.reshape(-1, mask.shape[-1])  # shape
+        pred_mask = missing.reshape(-1, mask.shape[-1])  # shape
+        nonpadded_rows = true_mask.sum(-1) > 0
+        fig.add_trace(go.Heatmap(
+            z=true_mask.cpu().detach().numpy().transpose()), row=2, col=2)
+        fig.add_trace(go.Heatmap(
+            z=pred_mask.cpu().detach().numpy().transpose()), row=3, col=2)
         # fig.update_layout(
         #     xaxis=dict(scaleanchor="y", scaleratio=1),
         #     yaxis=dict(scaleanchor="x", scaleratio=1)
@@ -388,6 +406,12 @@ class AeGAN:
             dis_loss = 0
             miss_loss1 = 0
             miss_loss2 = 0
+
+            loss_MSE_time = 0
+            loss_MSE_dt = 0
+            loss_MSE_time_BL = 0
+            loss_MSE_dt_BL = 0
+
             tot = 0
             t1 = time.time()
             if self.params["force"] == "linear":
@@ -413,9 +437,61 @@ class AeGAN:
                 out_sta, out_dyn, missing, gt = self.ae(
                     sta, dyn, lag, mask, priv, nex, times, seq_len, forcing=force)
                 # [bs, max_len, n_features], [bs, max_len, n_features], [bs]
+
+                # LOSS missing
                 loss3 = self.missing_loss(missing, mask, seq_len)
                 miss_loss1 += loss3.item()
-                loss4 = self.time_loss(gt, times, seq_len)
+
+                # loss4 = self.time_loss(gt, times, seq_len)
+
+                # LOSS time
+                mask_len = seq_len_to_mask(
+                    seq_len).unsqueeze(-1)  # False means masked
+                # times & times_pred [B,L,1]
+                # dt_true & dt_pred
+
+                # times_pad = [TIME_CONST,t1,...,t_{L-1}]
+                # times -> dt_true [(t1-TIME_CONST),(t2-t1),...(t_L-t_{L-1})]
+                # if dt_opt:
+                # we have dt_pred [dt1_p,dt2_p,....,dt_L_P]
+                # times_pred = [TIME_CONST,t1,...,t_{L-1}]+dt_pred > [t1_p, ...., tL_p]
+                # else:
+                # we have times_pred [t1_p, ...., tL_p]
+                # dt_pred = times_pred - [TIME_CONST,t1,...,t_{L-1}]
+
+                times_padded = pad_zero(times) * mask_len
+                dt_true = times.diff(
+                    axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device)) * mask_len
+
+                if DT_OPT:
+                    dt_pred = gt
+
+                    if self.time_mdn:
+                        loss4, gt = self.mdn_loss(dt_pred, dt_true, seq_len)
+                        dt_pred = gt
+                    else:
+                        loss4 = self.time_loss(dt_pred, dt_true, seq_len)
+                    times_pred = times_padded+dt_pred
+                else:
+                    times_pred = gt
+                    if self.time_mdn:
+                        loss4, gt = self.mdn_loss(times_pred, times, seq_len)
+                        times_pred = gt
+                    else:
+                        loss4 = self.time_loss(times_pred, times, seq_len)
+                    dt_pred = times_pred - times_padded
+
+                loss_MSE_time += self.time_loss(times_pred,
+                                                times, seq_len).item()
+                loss_MSE_dt += self.time_loss(dt_pred, dt_true, seq_len).item()
+                # time loss baselines
+                dt_mean = torch.masked_select(dt_true, mask_len).mean()
+                dt_median = torch.masked_select(dt_true, mask_len).median()
+                loss_MSE_time_BL += self.time_loss(
+                    times_padded+dt_median, times, seq_len).item()
+                loss_MSE_dt_BL += self.time_loss(dt_true *
+                                                 0+dt_median, dt_true, seq_len).item()
+
                 miss_loss2 += loss4.item()
 
                 loss1 = self.sta_loss(out_sta, sta)
@@ -439,16 +515,39 @@ class AeGAN:
                 tot += 1
 
             tot_loss /= tot
-            wandb.log({"ae_loss": tot_loss}, step=i+1)
-
+            # wandb.log({"ae_loss": tot_loss}, step=i+1)
+            wandb.log({"ae_loss": tot_loss,
+                       #    "KLD loss": KLD_loss/tot,
+                      "static_loss": con_loss/tot,
+                       "dynamic_loss": dis_loss/tot,
+                       "miss_loss": miss_loss1/tot,
+                       "time_loss": miss_loss2/tot,
+                       #    "loss_abs": loss_abs/tot,
+                       #    "loss_abs_bl": loss_abs_bl/tot,
+                       #    "miss_loss2_bl": miss_loss2_bl/tot,
+                       #    "loss_mdn_bl": loss_mdn_bl/tot,
+                       "loss_MSE_time": loss_MSE_time/tot,
+                       "loss_MSE_dt": loss_MSE_dt/tot,
+                       "loss_MSE_time_BL": loss_MSE_time_BL/tot,
+                       "loss_MSE_dt_BL": loss_MSE_dt_BL/tot,
+                       }, step=i)
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}\t{}\t{}".format(
                     i+1, time.time()-t1, force, con_loss/tot, dis_loss/tot, miss_loss1/tot, miss_loss2/tot))
             if i % 5 == 0:
-                fig_AE_rec = self.plot_ae(
-                    dyn, times, mask, out_dyn, gt, missing, i)
-                wandb.log(
-                    {"example_rec": wandb.Plotly(fig_AE_rec)}, step=i)
+                seq_len_pred = self.static_processor.inverse_transform(
+                    out_sta.detach().cpu().numpy()).iloc[:, -1].values
+
+                fig_AE_rec, fig2 = self.plot_ae(
+                    dyn, times, mask, seq_len.detach().cpu().numpy(),
+                    out_dyn, gt, missing, seq_len_pred)
+                wandb.log({
+                    "example_rec": wandb.Plotly(fig_AE_rec),
+                    "dt_corr": wandb.Plotly(fig2),
+                    # {"example_AE_syn": wandb.Plotly(fig_AE_syn),
+                    #  "vae": wandb.Plotly(fig_vae),
+                    #  "tsne_AE": wandb.Plotly(fig_tsne)
+                },    step=i)
                 # x_values = torch.masked_select(torch.arange(
                 #     out_dyn.shape[1], device=mask.device), mask[0, :, 0] == 1)
                 # y_values = torch.masked_select(
@@ -590,12 +689,18 @@ class AeGAN:
             static_loss = 0
             dynamic_loss = 0
             time_loss = 0
+            dt_loss = 0
             loss_mdn_bl = 0
             miss_loss = 0
             miss_loss1 = 0
             miss_loss2 = 0
             miss_loss2_bl = 0
             tot = 0
+
+            loss_MSE_time = 0
+            loss_MSE_dt = 0
+            loss_MSE_time_BL = 0
+            loss_MSE_dt_BL = 0
             t1 = time.time()
             if self.params["force"] == "linear":
                 if i >= epochs / 100 and i < epochs / 2:
@@ -625,103 +730,112 @@ class AeGAN:
                 out_sta, out_dyn, missing, gt = self.ae(
                     sta, dyn, lag, mask, priv, nex, times, seq_len, dt=dt, forcing=force)
                 # [bs, max_len, n_features], [bs, max_len, n_features], [bs]
+
+                # LOSS missing
                 loss3 = self.missing_loss(missing, mask, seq_len)
                 miss_loss1 += loss3.item()
-                if ("dt" in batch_x) or True:
-                    value_max = 0.5109656108798026
-                    gt_new = 1
-                    mask_len = seq_len_to_mask(
-                        seq_len).unsqueeze(-1)  # False means masked
 
-                    temp = times.diff(
-                        axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
-                    if TIME_NORM:
-                        # temp = (temp-0.03)/0.01
-                        temp = torch.from_numpy(pt.transform(
-                            temp.cpu().numpy().reshape(-1, 1))).to(temp.device).reshape(temp.shape)
+                # LOSS time
 
-                    mask_len = seq_len_to_mask(
-                        seq_len).unsqueeze(-1)  # False means masked
-                    dt_true = (mask_len*temp)
+                mask_len = seq_len_to_mask(
+                    seq_len).unsqueeze(-1)  # False means masked
+                # times & times_pred [B,L,1]
+                # dt_true & dt_pred
 
-                    if MDN:
-                        # mixture_params = mdn(gt, dt_true, seq_len)
-                        mixture_params = torch.zeros_like(gt)
-                        # if TIME_NORM:
-                        #     gt = gt*0.01+0.03
-                        loss4, gt = self.mdn_loss(gt, dt_true, seq_len)
-                        if TIME_NORM:
-                            # gt = gt*0.01+0.03
-                            gt = torch.from_numpy(pt.inverse_transform(
-                                gt.detach().cpu().numpy().reshape(-1, 1))).to(gt.device).reshape(gt.shape)
+                # times_pad = [TIME_CONST,t1,...,t_{L-1}]
+                # times -> dt_true [(t1-TIME_CONST),(t2-t1),...(t_L-t_{L-1})]
+                # if dt_opt:
+                # we have dt_pred [dt1_p,dt2_p,....,dt_L_P]
+                # times_pred = [TIME_CONST,t1,...,t_{L-1}]+dt_pred > [t1_p, ...., tL_p]
+                # else:
+                # we have times_pred [t1_p, ...., tL_p]
+                # dt_pred = times_pred - [TIME_CONST,t1,...,t_{L-1}]
 
-                        # baseline mdn (handcrafted)
-                        # mixture_params[:, :, 0] = 0.0034
-                        # mixture_params[:, :, 1] = 0.0104
-                        # mixture_params[:, :, 2] = 0.0208
+                times_padded = pad_zero(times) * mask_len
+                dt_true = times.diff(
+                    axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device)) * mask_len
 
-                        # mixture_params[:, :, 3] = -3.8
-                        # mixture_params[:, :, 4] = -3.8
-                        # mixture_params[:, :, 5] = -3.8
+                if DT_OPT:
+                    dt_pred = gt
 
-                        # mixture_params[:, :, [6]] = 1/torch.abs(dt_true-0.0034)
-                        # mixture_params[:, :, [7]] = 1/torch.abs(dt_true-0.0104)
-                        # mixture_params[:, :, [8]] = 1/torch.abs(dt_true-0.0208)
-
-                        # loss_temp, gt2 = self.mdn_loss(
-                        #     mixture_params, dt_true, seq_len)
-                        # loss_mdn_bl += loss_temp.item()
-                        # # extract pointn estimate
-                        # mean, _, raw_weight = torch.split(gt, 3, dim=-1)
-                        # _, max_idx = torch.max(raw_weight, dim=-1)
-                        # # point_predictions = mean[torch.arange(mean.size(0)),torch.arange(mean.size(1)), max_idx]
-                        # # [bs, max_len, 1]
-                        # gt = torch.gather(mean, 2, max_idx.unsqueeze(-1))
+                    if self.time_mdn:
+                        loss4, gt = self.mdn_loss(dt_pred, dt_true, seq_len)
+                        dt_pred = gt
                     else:
-                        loss4 = self.time_loss(gt, dt_true, seq_len)
-
-                    seq_mask = seq_len_to_mask(seq_len)
-                    # miss_loss2_bl += self.time_loss(gt *
-                    #                                 0+0.03, dt, seq_len).item()
-                    # # ### times_pred OLD
-                    # # # shift to right and pad the first element
-                    # # # [t1,t1,....,t_{L-1}]
-                    # # temp = torch.cat(
-                    # #     [times[:, :1, :], times[:, :-1, :]], axis=1)*seq_mask.unsqueeze(-1)
-                    # # # predicted [t1,t2,...,t_{L}]
-                    # # times_pred = temp + gt*value_max
-                    # # times_true = times
-                    # # loss_abs += self.time_loss(
-                    # #     times_pred, times_true, seq_len).item()
-
-                    # # loss_abs_bl
-                    # times_pred = temp + 0.03
-                    # times_true = times
-                    # loss_abs_bl += self.time_loss(
-                    #     times_pred, times_true, seq_len).item()
-
-                    # times_pred NEW
-
-                    concat_times = torch.cat(
-                        [TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device), times[:, :-1, :]], dim=1)
-                    times_pred = ((concat_times+gt[:, :, 0:1]))*mask_len
-                    loss_abs += self.time_loss(
-                        times_pred, times, seq_len).item()
-
-                    # true dt
-                    temp = times.diff(
-                        axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
-                    priv = (mask_len*temp)
-                    dt_mean = torch.masked_select(priv, mask_len).mean()
-                    dt_median = torch.masked_select(priv, mask_len).median()
-
-                    # loss_abs_bl
-                    loss_abs_bl += self.time_loss(
-                        times+dt_median, times, seq_len).item()
-
+                        loss4 = self.time_loss(dt_pred, dt_true, seq_len)
+                    times_pred = times_padded+dt_pred
                 else:
-                    times_pred = times
-                    loss4 = self.time_loss(gt, times, seq_len)
+                    times_pred = gt
+                    if self.time_mdn:
+                        loss4, gt = self.mdn_loss(times_pred, times, seq_len)
+                        times_pred = gt
+                    else:
+                        loss4 = self.time_loss(times_pred, times, seq_len)
+                    dt_pred = times_pred - times_padded
+
+                loss_MSE_time += self.time_loss(times_pred,
+                                                times, seq_len).item()
+                loss_MSE_dt += self.time_loss(dt_pred, dt_true, seq_len).item()
+                # time loss baselines
+                dt_mean = torch.masked_select(dt_true, mask_len).mean()
+                dt_median = torch.masked_select(dt_true, mask_len).median()
+                loss_MSE_time_BL += self.time_loss(
+                    times_padded+dt_median, times, seq_len).item()
+                loss_MSE_dt_BL += self.time_loss(dt_true *
+                                                 0+dt_median, dt_true, seq_len).item()
+
+                # if ("dt" in batch_x) or True:
+                #     value_max = 0.5109656108798026
+                #     gt_new = 1
+                #     mask_len = seq_len_to_mask(
+                #         seq_len).unsqueeze(-1)  # False means masked
+
+                #     # compute dt_true
+                #     temp = times.diff(
+                #         axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
+
+                #     # mask_len = seq_len_to_mask(
+                #     #     seq_len).unsqueeze(-1)  # False means masked
+                #     dt_true = (mask_len*temp)
+
+                #     # NORM if necessary
+                #     if TIME_NORM:
+                #         dt_true = torch.from_numpy(pt.transform(
+                #             dt_true.cpu().numpy().reshape(-1, 1))).to(dt_true.device).reshape(dt_true.shape)
+
+                #     # compute LOSS time MDN or MSE
+                #     if MDN:
+                #         loss4, gt = self.mdn_loss(gt, dt_true, seq_len)
+                #     else:
+                #         loss4 = self.time_loss(gt, dt_true, seq_len)
+
+                #     # inverse NORM
+                #     if TIME_NORM:
+                #         gt = torch.from_numpy(pt.inverse_transform(
+                #             gt.detach().cpu().numpy().reshape(-1, 1))).to(gt.device).reshape(gt.shape)
+
+                #     # times_pred NEW
+
+                #     concat_times = torch.cat(
+                #         [TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device), times[:, :-1, :]], dim=1)
+                #     times_pred = ((concat_times+gt[:, :, 0:1]))*mask_len
+                #     loss_abs += self.time_loss(
+                #         times_pred, times, seq_len).item()
+
+                #     # log MSE dt
+                #     temp = times.diff(
+                #         axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
+                #     priv = (mask_len*temp)
+                #     dt_mean = torch.masked_select(priv, mask_len).mean()
+                #     dt_median = torch.masked_select(priv, mask_len).median()
+
+                #     # loss_abs_bl
+                #     loss_abs_bl += self.time_loss(
+                #         times+dt_median, times, seq_len).item()
+
+                # else:
+                #     times_pred = times
+                #     loss4 = self.time_loss(gt, times, seq_len)
                 miss_loss2 += loss4.item()
 
                 loss1 = self.sta_loss(out_sta, sta)
@@ -749,8 +863,21 @@ class AeGAN:
                 tot += 1
 
             tot_loss /= tot
-            wandb.log({"ae_loss": tot_loss, "KLD loss": KLD_loss/tot,
-                      "static_loss": con_loss/tot, "dynamic_loss": dis_loss/tot, "miss_loss": miss_loss1/tot, "time_loss": miss_loss2/tot, "loss_abs": loss_abs/tot, "loss_abs_bl": loss_abs_bl/tot, "miss_loss2_bl": miss_loss2_bl/tot, "loss_mdn_bl": loss_mdn_bl/tot}, step=i)
+            wandb.log({"ae_loss": tot_loss,
+                       "KLD loss": KLD_loss/tot,
+                      "static_loss": con_loss/tot,
+                       "dynamic_loss": dis_loss/tot,
+                       "miss_loss": miss_loss1/tot,
+                       "time_loss": miss_loss2/tot,
+                       #    "loss_abs": loss_abs/tot,
+                       #    "loss_abs_bl": loss_abs_bl/tot,
+                       #    "miss_loss2_bl": miss_loss2_bl/tot,
+                       #    "loss_mdn_bl": loss_mdn_bl/tot,
+                       "loss_MSE_time": loss_MSE_time/tot,
+                       "loss_MSE_dt": loss_MSE_dt/tot,
+                       "loss_MSE_time_BL": loss_MSE_time_BL/tot,
+                       "loss_MSE_dt_BL": loss_MSE_dt_BL/tot,
+                       }, step=i)
 
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}\t{}\t{}".format(

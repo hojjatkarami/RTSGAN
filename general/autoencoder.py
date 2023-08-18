@@ -1032,7 +1032,7 @@ class Autoencoder(nn.Module):
         self.encoder = Encoder(processors[0].tgt_dim + processors[1].tgt_dim +
                                s_dim + processors[1].miss_dim, hidden_dim, embed_dim, layers, dropout)
         self.decoder = Decoder(processors, hidden_dim,
-                               layers, dropout, opt_dt=opt_dt, time_mdb=time_mdn)
+                               layers, dropout, opt_dt=opt_dt, time_mdn=time_mdn)
 
         self.encoder.opt_dt = opt_dt
         # self.decoder.opt_dt = opt_dt
@@ -1054,7 +1054,7 @@ class VariationalAutoencoder(nn.Module):
         self.encoder = TransformerVariationalEncoder(
             processors[0].tgt_dim + processors[1].tgt_dim + s_dim + processors[1].miss_dim, hidden_dim, embed_dim, layers, dropout)
         self.decoder = TransformerDecoder(
-            processors, hidden_dim, layers, dropout, opt_dt=opt_dt, time_mdb=time_mdn)
+            processors, hidden_dim, layers, dropout, opt_dt=opt_dt, time_mdn=time_mdn)
 
         self.encoder.opt_dt = opt_dt
         # self.decoder.opt_dt = opt_dt

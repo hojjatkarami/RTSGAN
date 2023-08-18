@@ -364,7 +364,7 @@ def pad_zero(x):
 
 
 class Decoder(nn.Module):
-    def __init__(self, processors, hidden_dim, layers, dropout, opt_dt=False):
+    def __init__(self, processors, hidden_dim, layers, dropout, opt_dt=False, time_mdn=False):
         super(Decoder, self).__init__()
         self.opt_dt = opt_dt
         self.s_P, self.d_P = processors
@@ -634,7 +634,7 @@ class Decoder(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, processors, hidden_dim, layers, dropout, opt_dt=False):
+    def __init__(self, processors, hidden_dim, layers, dropout, opt_dt=False, time_mdn=False):
         super(TransformerDecoder, self).__init__()
         self.opt_dt = opt_dt
 
@@ -1032,7 +1032,7 @@ class Autoencoder(nn.Module):
         self.encoder = Encoder(processors[0].tgt_dim + processors[1].tgt_dim +
                                s_dim + processors[1].miss_dim, hidden_dim, embed_dim, layers, dropout)
         self.decoder = Decoder(processors, hidden_dim,
-                               layers, dropout, opt_dt=opt_dt)
+                               layers, dropout, opt_dt=opt_dt, time_mdb=time_mdn)
 
         self.encoder.opt_dt = opt_dt
         # self.decoder.opt_dt = opt_dt
@@ -1054,7 +1054,7 @@ class VariationalAutoencoder(nn.Module):
         self.encoder = TransformerVariationalEncoder(
             processors[0].tgt_dim + processors[1].tgt_dim + s_dim + processors[1].miss_dim, hidden_dim, embed_dim, layers, dropout)
         self.decoder = TransformerDecoder(
-            processors, hidden_dim, layers, dropout, opt_dt=opt_dt)
+            processors, hidden_dim, layers, dropout, opt_dt=opt_dt, time_mdb=time_mdn)
 
         self.encoder.opt_dt = opt_dt
         # self.decoder.opt_dt = opt_dt

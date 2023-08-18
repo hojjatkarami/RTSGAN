@@ -367,6 +367,7 @@ class Decoder(nn.Module):
     def __init__(self, processors, hidden_dim, layers, dropout, opt_dt=False, time_mdn=False):
         super(Decoder, self).__init__()
         self.opt_dt = opt_dt
+        self.time_mdn = time_mdn
         self.s_P, self.d_P = processors
         self.hidden_dim = hidden_dim
         statics_dim, dynamics_dim = self.s_P.tgt_dim, self.d_P.tgt_dim
@@ -637,7 +638,7 @@ class TransformerDecoder(nn.Module):
     def __init__(self, processors, hidden_dim, layers, dropout, opt_dt=False, time_mdn=False):
         super(TransformerDecoder, self).__init__()
         self.opt_dt = opt_dt
-
+        self.time_mdn = time_mdn
         self.s_P, self.d_P = processors
         self.hidden_dim = hidden_dim
         statics_dim, dynamics_dim = self.s_P.tgt_dim, self.d_P.tgt_dim

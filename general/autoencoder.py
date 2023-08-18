@@ -387,7 +387,7 @@ class Decoder(nn.Module):
 
         self.miss_fc = nn.Linear(hidden_dim, self.miss_dim)
         self.time_fc = nn.Linear(hidden_dim, 1)
-        if self.opt_dt:
+        if self.opt_mdn:
             mdn_num_components = 3
             self.fc_mdn = nn.Linear(hidden_dim, HH*mdn_num_components*3)
     # embed: bs, hidden_dim*(layers+1)
@@ -674,7 +674,7 @@ class TransformerDecoder(nn.Module):
         self.fc_finh = nn.Linear((layers+1)*hidden_dim, hidden_dim)
 
         self.fc = nn.Linear(4*hidden_dim, hidden_dim)
-        if self.opt_dt:
+        if self.opt_mdn:
             mdn_num_components = 3
             self.fc_mdn = nn.Linear(hidden_dim, HH*mdn_num_components*3)
         # self.fc_mdn2 = nn.Linear(hidden_dim, mdn_num_components*3)

@@ -79,3 +79,25 @@
         }
     ]
 }
+
+
+// python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name NEW --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000 --vae --opt-dt --time-mdn 
+
+// python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name NEW --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000 --vae
+
+// python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name NEW --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000 --vae         --time-mdn 
+
+//  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name NEW --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000 --vae --opt-dt 
+
+
+
+
+
+
+//  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name RTSGAN --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000         --opt-dt --time-mdn 
+
+//  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name RTSGAN --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000
+ 
+//  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name RTSGAN --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000                 --time-mdn 
+
+//  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name RTSGAN --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000         --opt-dt  

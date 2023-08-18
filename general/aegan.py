@@ -359,7 +359,7 @@ class AeGAN:
 
         # plot heatmap of masking pattern
         true_mask = mask.reshape(-1, mask.shape[-1])  # shape
-        pred_mask = missing.reshape(-1, mask.shape[-1])  # shape
+        pred_mask = (missing > 0.5).reshape(-1, mask.shape[-1])  # shape
         nonpadded_rows = true_mask.sum(-1) > 0
         fig.add_trace(go.Heatmap(
             z=true_mask.cpu().detach().numpy().transpose()), row=2, col=2)

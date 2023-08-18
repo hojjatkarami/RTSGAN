@@ -87,8 +87,9 @@ parser.add_argument("--noise-dim", default=96, dest="noise_dim",
 
 options = parser.parse_args()
 
-task_name = options.task_name+options.opt_dt*'_dt'+options.time_mdn*"_MDN"
-root_dir = "{}/{}".format(options.log_dir, task_name)
+options.task_name = options.task_name + \
+    options.opt_dt*'_dt'+options.time_mdn*"_MDN"
+root_dir = "{}/{}".format(options.log_dir, options.task_name)
 make_sure_path_exists(root_dir)
 
 devices = [int(x) for x in options.devi]

@@ -287,8 +287,8 @@ class TransformerVariationalEncoder(nn.Module):
             # with mask
             # Create subsequent mask - True is masked
             src_subsequent_mask = torch.triu(torch.ones(
-                max_seq_len, max_seq_len), diagonal=0).bool().to(x.device)
-
+                max_seq_len, max_seq_len), diagonal=1).bool().to(x.device)
+            # d=0 [F\T\T]
             # d=1 [F\F\T]
             # d=2 [F\F\[FT..T]]
             transformer_output = self.transformer_encoder(
@@ -743,6 +743,10 @@ class TransformerDecoder(nn.Module):
         max_seq_len = x.size(1)
 
         # Create subsequent mask
+
+        memory_subsequent_mask = torch.triu(torch.ones(
+            max_seq_len, max_seq_len), diagonal=0).bool().to(x.device)
+
         tgt_subsequent_mask = torch.triu(torch.ones(
             max_seq_len, max_seq_len), diagonal=1).bool().to(x.device)
         tgt_key_padding_mask = torch.arange(max_seq_len, device=seq_len.device)[
@@ -768,7 +772,7 @@ class TransformerDecoder(nn.Module):
                 # memory_mask=tgt_subsequent_mask,
                 tgt_key_padding_mask=tgt_key_padding_mask,
                 memory_key_padding_mask=tgt_key_padding_mask,
-                # memory_mask=subsequent_mask,
+                memory_mask=memory_subsequent_mask,
             )  # bs, max_len, hidden_dim
 
         # packed = nn.utils.rnn.pack_padded_sequence(

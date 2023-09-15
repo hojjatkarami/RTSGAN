@@ -285,9 +285,12 @@ class TransformerVariationalEncoder(nn.Module):
         if ENC_MASK:
 
             # with mask
-            # Create subsequent mask
+            # Create subsequent mask - True is masked
             src_subsequent_mask = torch.triu(torch.ones(
-                max_seq_len, max_seq_len), diagonal=1).bool().to(x.device)
+                max_seq_len, max_seq_len), diagonal=0).bool().to(x.device)
+
+            # d=1 [F\F\T]
+            # d=2 [F\F\[FT..T]]
             transformer_output = self.transformer_encoder(
                 x, mask=src_subsequent_mask, src_key_padding_mask=src_key_padding_mask)
 

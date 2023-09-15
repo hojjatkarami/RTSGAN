@@ -9,9 +9,10 @@ from fastNLP import seq_len_to_mask
 from basic import PositionwiseFeedForward, PositionalEncoding, TimeEncoding, max_pooling, mean_pooling
 import random
 import pickle
+import numpy as np
 TIME_CONST = 0
 TIME_NORM = False
-ENC_MASK = False
+ENC_MASK = True
 POSENC = True
 HH = 1
 MDN = False
@@ -1099,5 +1100,8 @@ class VariationalAutoencoder(nn.Module):
 
         # missing = self.mask_decoder(self.mask_encoder(mask))
         missing = self.mask_decoder(hidden)
+
+        # missing = self.mask_decoder(
+        #     hidden[np.arange(hidden.shape[0]), seq_len-1]).unsqueeze(1).expand_as(mask)
 
         return out_sta, out_dyn, missing, gt

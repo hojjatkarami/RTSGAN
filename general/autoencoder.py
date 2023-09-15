@@ -1083,6 +1083,12 @@ class VariationalAutoencoder(nn.Module):
             nn.Sigmoid(),  # Sigmoid activation for binary outputs
         )
 
+        self.time_decoder = nn.Sequential(
+            nn.Linear(hidden_dim*4, 8),
+            nn.ReLU(),
+            nn.Linear(8, 9),
+        )
+
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5*logvar)
         eps = torch.randn_like(std)
@@ -1101,7 +1107,7 @@ class VariationalAutoencoder(nn.Module):
         # missing = self.mask_decoder(self.mask_encoder(mask))
         missing = self.mask_decoder(hidden)
 
-        # missing = self.mask_decoder(
-        #     hidden[np.arange(hidden.shape[0]), seq_len-1]).unsqueeze(1).expand_as(mask)
-
+        missing = self.mask_decoder(
+            hidden[np.arange(hidden.shape[0]), seq_len-1]).unsqueeze(1).expand_as(mask)
+        gt = self.time_decoder(hidden)
         return out_sta, out_dyn, missing, gt

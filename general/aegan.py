@@ -891,7 +891,7 @@ class AeGAN:
                 scale3 = 0.1
 
                 loss = scale1 * loss1 + scale2 * \
-                    (loss2 + loss3) + scale3 * loss4*0 + self.ae.KLD*0
+                    (loss2 + loss3) + scale3 * loss4 + self.ae.KLD*0
                 # loss = loss1+loss2 + self.ae.KLD*5
                 # loss = loss1 + loss2 + loss3 + loss4
                 if i > 0:

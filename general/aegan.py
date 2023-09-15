@@ -890,8 +890,8 @@ class AeGAN:
                 scale2 = dyn_num / (sta_num + dyn_num)
                 scale3 = 0.1
 
-                loss = scale1 * loss1*0 + scale2 * \
-                    (loss2*0 + loss3) + scale3 * loss4*0 + self.ae.KLD*0
+                loss = scale1 * loss1 + scale2 * \
+                    (loss2 + loss3) + scale3 * loss4*0 + self.ae.KLD*0
                 # loss = loss1+loss2 + self.ae.KLD*5
                 # loss = loss1 + loss2 + loss3 + loss4
                 if i > 0:

@@ -1107,7 +1107,7 @@ class VariationalAutoencoder(nn.Module):
         # missing = self.mask_decoder(self.mask_encoder(mask))
         missing = self.mask_decoder(hidden)
 
-        missing = self.mask_decoder(
-            hidden[np.arange(hidden.shape[0]), seq_len-1]).unsqueeze(1).expand_as(mask)
+        # missing = self.mask_decoder(
+        #     hidden[np.arange(hidden.shape[0]), seq_len-1]).unsqueeze(1).expand_as(mask)
         gt = self.time_decoder(hidden)
         return out_sta, out_dyn, missing, gt

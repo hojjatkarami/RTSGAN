@@ -198,8 +198,8 @@ class AeGAN:
         return torch.mean(loss)
 
     def time_loss(self, data, target, seq_len):
-        # loss = self.loss_con(data, target)  # batch_size, max_len, 1
-        loss = nn.L1Loss()(data, target)  # batch_size, max_len, 1
+        loss = self.loss_con(data, target)  # batch_size, max_len, 1
+        # loss = nn.L1Loss()(data, target)  # batch_size, max_len, 1
         seq_mask = seq_len_to_mask(seq_len)  # batch_size, max_len
         loss = torch.masked_select(loss, seq_mask.unsqueeze(-1))
         return torch.mean(loss)  # scalar

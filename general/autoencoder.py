@@ -11,7 +11,7 @@ import random
 import pickle
 TIME_CONST = 0
 TIME_NORM = False
-ENC_MASK = True
+ENC_MASK = False
 POSENC = True
 HH = 1
 MDN = False
@@ -296,10 +296,14 @@ class TransformerVariationalEncoder(nn.Module):
             # # WO mask
             transformer_output = self.transformer_encoder(x,
                                                           src_key_padding_mask=src_key_padding_mask)
-            # Aggregate over sequence dimension
-            mu = self.fc_mu(transformer_output.mean(dim=1))  # bs, hidden_dim*4
-            # Aggregate over sequence dimension
-            logvar = self.fc_logvar(transformer_output.mean(dim=1))
+            mu = self.fc_mu(transformer_output)  # bs, max_len, hidden_dim*4
+            logvar = self.fc_logvar(transformer_output)
+
+            # # old method
+            # # Aggregate over sequence dimension
+            # mu = self.fc_mu(transformer_output.mean(dim=1))  # bs, hidden_dim*4
+            # # Aggregate over sequence dimension
+            # logvar = self.fc_logvar(transformer_output.mean(dim=1))
 
         return mu, logvar
 
@@ -1072,7 +1076,7 @@ class VariationalAutoencoder(nn.Module):
 
         )
         self.mask_decoder = nn.Sequential(
-            nn.Linear(hidden_dim, 16),
+            nn.Linear(hidden_dim*4, 16),
             nn.ReLU(),
             nn.Linear(16, processors[1].miss_dim),
             nn.Sigmoid(),  # Sigmoid activation for binary outputs
@@ -1093,6 +1097,7 @@ class VariationalAutoencoder(nn.Module):
         out_sta, out_dyn, missing, gt = self.decoder(
             hidden, sta, dyn, lag, mask, priv, times, seq_len, dt=dt, forcing=forcing)
 
-        missing = self.mask_decoder(self.mask_encoder(mask))
+        # missing = self.mask_decoder(self.mask_encoder(mask))
+        missing = self.mask_decoder(hidden)
 
         return out_sta, out_dyn, missing, gt

@@ -36,7 +36,8 @@ parser.add_argument("--opt-dt", dest="opt_dt", default=False,
                     action="store_true", help="Debug mode")
 parser.add_argument("--time-mdn", dest="time_mdn", default=False,
                     action="store_true", help="Debug mode")
-
+parser.add_argument("--mask-smooth", dest="mask_smooth", default=False,
+                    action="store_true", help="Debug mode")
 parser.add_argument("--vae", default=False, dest="vae", action="store_true",)
 
 parser.add_argument("--dataset", required=True,
@@ -88,7 +89,7 @@ parser.add_argument("--noise-dim", default=96, dest="noise_dim",
 options = parser.parse_args()
 
 options.task_name = options.task_name + \
-    options.opt_dt*'_dt'+options.time_mdn*"_MDN"
+    options.opt_dt*'_dt'+options.time_mdn*"_MDN" + options.mask_smooth*"_SMOOTH"
 root_dir = "{}/{}".format(options.log_dir, options.task_name)
 make_sure_path_exists(root_dir)
 

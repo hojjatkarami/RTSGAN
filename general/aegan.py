@@ -40,6 +40,26 @@ def pad_zero(x):
     return input_x
 
 
+def applySmoothing(binary_matrix):
+    W, H = binary_matrix.shape[-2:]
+    # Define the standard deviation for the Gaussian kernel
+    kernel_size = 9
+    sigma = 1
+
+    kernel = torch.exp(-(torch.arange(kernel_size) -
+                         kernel_size // 2)**2 / (2 * sigma**2))
+    kernel = kernel / kernel.sum()
+
+    # Convert the kernel to a 2D tensor
+    kernel = kernel.expand(H, 1, -1).to(binary_matrix.device)
+
+    # Apply convolution to smoothen along the first dimension
+    smoothed_matrix = nn.functional.conv1d(binary_matrix.transpose(
+        1, 2), kernel, padding='same', groups=H).transpose(1, 2)
+
+    return smoothed_matrix
+
+
 class AeGAN:
     def __init__(self, processors, params):
         self.params = params
@@ -51,6 +71,7 @@ class AeGAN:
 
         self.time_mdn = params["time_mdn"]
         self.opt_dt = params["opt_dt"]
+        self.mask_smooth = params["mask_smooth"]
 
         if params["vae"]:
             self.ae = VariationalAutoencoder(
@@ -359,7 +380,7 @@ class AeGAN:
 
         # plot heatmap of masking pattern
         true_mask = mask.reshape(-1, mask.shape[-1])  # shape
-        pred_mask = (missing > 0.5).reshape(-1, mask.shape[-1])  # shape
+        pred_mask = (missing > 0.5).int().reshape(-1, mask.shape[-1])  # shape
         nonpadded_rows = true_mask.sum(-1) > 0
         fig.add_trace(go.Heatmap(
             z=true_mask.cpu().detach().numpy().transpose()), row=2, col=2)
@@ -411,7 +432,8 @@ class AeGAN:
             loss_MSE_dt = 0
             loss_MSE_time_BL = 0
             loss_MSE_dt_BL = 0
-
+            loss_miss_smooth = 0
+            loss_miss_hard = 0
             tot = 0
             t1 = time.time()
             if self.params["force"] == "linear":
@@ -439,10 +461,18 @@ class AeGAN:
                 # [bs, max_len, n_features], [bs, max_len, n_features], [bs]
 
                 # LOSS missing
-                loss3 = self.missing_loss(missing, mask, seq_len)
-                miss_loss1 += loss3.item()
 
-                # loss4 = self.time_loss(gt, times, seq_len)
+                mask_smoothed = applySmoothing(mask)
+                loss3_smoothed = self.missing_loss(
+                    missing, mask_smoothed, seq_len)
+                loss3_hard = self.missing_loss(missing, mask, seq_len)
+
+                if self.mask_smooth:
+                    loss3 = loss3_smoothed
+                else:
+                    loss3 = loss3_hard
+                loss_miss_hard += loss3_hard.item()
+                loss_miss_smooth += loss3_smoothed.item()
 
                 # LOSS time
                 mask_len = seq_len_to_mask(
@@ -530,6 +560,8 @@ class AeGAN:
                        "loss_MSE_dt": loss_MSE_dt/tot,
                        "loss_MSE_time_BL": loss_MSE_time_BL/tot,
                        "loss_MSE_dt_BL": loss_MSE_dt_BL/tot,
+                       "loss_miss_smooth": loss_miss_smooth/tot,
+                       "loss_miss_hard": loss_miss_hard/tot,
                        }, step=i)
             if i % 5 == 0:
                 self.logger.info("Epoch:{} {}\t{}\t{}\t{}\t{}\t{}".format(
@@ -696,7 +728,8 @@ class AeGAN:
             miss_loss2 = 0
             miss_loss2_bl = 0
             tot = 0
-
+            loss_miss_hard = 0
+            loss_miss_smooth = 0
             loss_MSE_time = 0
             loss_MSE_dt = 0
             loss_MSE_time_BL = 0
@@ -732,9 +765,18 @@ class AeGAN:
                 # [bs, max_len, n_features], [bs, max_len, n_features], [bs]
 
                 # LOSS missing
-                loss3 = self.missing_loss(missing, mask, seq_len)
-                miss_loss1 += loss3.item()
 
+                mask_smoothed = applySmoothing(mask)
+                loss3_smoothed = self.missing_loss(
+                    missing, mask_smoothed, seq_len)
+                loss3_hard = self.missing_loss(missing, mask, seq_len)
+
+                if self.mask_smooth:
+                    loss3 = loss3_smoothed
+                else:
+                    loss3 = loss3_hard
+                loss_miss_hard += loss3_hard.item()
+                loss_miss_smooth += loss3_smoothed.item()
                 # LOSS time
 
                 mask_len = seq_len_to_mask(
@@ -848,7 +890,7 @@ class AeGAN:
                 scale3 = 0.1
 
                 loss = scale1 * loss1 + scale2 * \
-                    (loss2 + loss3) + scale3 * loss4 + self.ae.KLD*0
+                    (loss2 + loss3) + scale3 * loss4*0 + self.ae.KLD*0
                 # loss = loss1+loss2 + self.ae.KLD*5
                 # loss = loss1 + loss2 + loss3 + loss4
                 if i > 0:
@@ -877,6 +919,8 @@ class AeGAN:
                        "loss_MSE_dt": loss_MSE_dt/tot,
                        "loss_MSE_time_BL": loss_MSE_time_BL/tot,
                        "loss_MSE_dt_BL": loss_MSE_dt_BL/tot,
+                       "loss_miss_smooth": loss_miss_smooth/tot,
+                       "loss_miss_hard": loss_miss_hard/tot,
                        }, step=i)
 
             if i % 5 == 0:

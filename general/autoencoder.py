@@ -772,7 +772,7 @@ class TransformerDecoder(nn.Module):
                 # memory_mask=tgt_subsequent_mask,
                 tgt_key_padding_mask=tgt_key_padding_mask,
                 memory_key_padding_mask=tgt_key_padding_mask,
-                memory_mask=memory_subsequent_mask,
+                # memory_mask=memory_subsequent_mask,
             )  # bs, max_len, hidden_dim
 
         # packed = nn.utils.rnn.pack_padded_sequence(

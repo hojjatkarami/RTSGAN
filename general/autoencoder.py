@@ -1083,11 +1083,27 @@ class VariationalAutoencoder(nn.Module):
 
 
         )
+
         self.mask_decoder = nn.Sequential(
-            nn.Linear(hidden_dim*4, 16),
+            nn.Linear(hidden_dim, int(hidden_dim/2)),
             nn.ReLU(),
-            nn.Linear(16, processors[1].miss_dim),
+            nn.Linear(int(hidden_dim/2), processors[1].miss_dim),
             nn.Sigmoid(),  # Sigmoid activation for binary outputs
+        )
+
+        self.mask_encoder2 = nn.Sequential(
+            nn.Conv2d(1, 2, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(2, 4, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+        )
+        self.mask_decoder2 = nn.Sequential(
+            nn.ConvTranspose2d(4, 2, kernel_size=3, stride=2,
+                               padding=1, output_padding=1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(2, 1, kernel_size=3, stride=2,
+                               padding=1, output_padding=1),
+            nn.Sigmoid()  # Sigmoid for binary output
         )
 
         self.time_decoder = nn.Sequential(
@@ -1111,10 +1127,14 @@ class VariationalAutoencoder(nn.Module):
         out_sta, out_dyn, missing, gt = self.decoder(
             hidden, sta, dyn, lag, mask, priv, times, seq_len, dt=dt, forcing=forcing)
 
-        # missing = self.mask_decoder(self.mask_encoder(mask))
+        missing = self.mask_decoder(self.mask_encoder(mask))
         # missing = self.mask_decoder(hidden)
 
-        missing = self.mask_decoder(
-            hidden[np.arange(hidden.shape[0]), seq_len-1]).unsqueeze(1).expand_as(mask)
+        # missing = self.mask_decoder(
+        #     hidden[np.arange(hidden.shape[0]), seq_len-1]).unsqueeze(1).expand_as(mask)
+
+        # approach 3
+        missing = self.mask_decoder2(self.mask_encoder2(
+            mask.unsqueeze(1))).squeeze()[:, :mask.shape[1], :mask.shape[2]]  # [bs, h, varible]
         # gt = self.time_decoder(hidden)
         return out_sta, out_dyn, missing, gt

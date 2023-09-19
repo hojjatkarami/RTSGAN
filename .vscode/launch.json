@@ -4,7 +4,6 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
         {
             "name": "Python: Current File",
             "type": "python",
@@ -16,33 +15,23 @@
                 // main2012.py
                 // "--dataset", "./data/physio_data/full2012.pkl",
                 // "--dataset", "./data/energy.pkl",
-
                 // "--task-name", "energy_test",
                 // "--epochs", "1",
                 // "--iterations","1",
                 // "--log-dir","energy_result/energy",
                 // // "--fix-ae", "stock_result/stock/ae.dat",
                 // // "--fix-gan", "stock_result/stock/generator.dat",
-
-
-
                 // // miss2012.py
-
                 // // "--task-name","2012_result/test", // TSTR
                 // "--task-name","./data/physio_data", // TRTR
                 // "--impute","zero",
-
-
-
                 // sine
-
                 // "--dataset", "./data/data_frame_sine_normal.pkl",
                 // "--log-dir", "./sine_normal_result",
                 // "--task-name", "sine_normal",
                 // "--python-seed", "1374",
                 // "--epochs", "2",
                 // "--iterations", "500"
-
                 // "--dataset", "./data/data_frame_sine_normal.pkl",
                 // "--log-dir", "./sine_normal_result",
                 // "--task-name", "temp",
@@ -53,52 +42,58 @@
                 // // "--fix-ae", "sine_normal_result/sine_normal_vae/ae.dat",
                 // "--gan-lr", "1e-3",
                 // // "--vae",
-
                 // syn irregular
-
-                // "--dataset", "./data/physio_data/sine_irreg_inhom.pkl",
-                "--dataset", "./data/physio_data/full2012.pkl",
-                "--log-dir", "./sine_irr_result",
-                "--task-name", "DEB",
-                "--python-seed", "1374",
-                "--epochs", "150",
-                "--hidden-dim","8",
-                // "--dropout","0.2",
-                // "--ae-lr", "3e-4",
-                // "--fix-ae", "sine_irr_result/temp/ae.dat",
+                // // "--dataset", "./data/physio_data/sine_irreg_inhom.pkl",
+                // "--dataset", "./data/physio_data/full2012.pkl",
+                // "--log-dir", "./sine_irr_result",
+                // "--task-name", "DEB",
+                // "--python-seed", "1374",
+                // "--epochs", "150",
+                // "--hidden-dim","8",
+                // // "--dropout","0.2",
+                // // "--ae-lr", "3e-4",
+                // // "--fix-ae", "sine_irr_result/temp/ae.dat",
+                // "--vae",
+                // "--ae-lr", "3e-3",
+                // "--weight-decay", "1e-3",
+                // "--ae-batch-size", "128",
+                // // "--dropout","0.2",
+                // "--iterations", "1000",
+                // "--opt-dt",
+                // "--time-mdn",
+                // "--mask-smooth"
+                "--dataset",
+                "./data/physio_data/full2012.pkl",
+                "--log-dir",
+                "./sine_irr_result",
+                "--task-name",
+                "TEST",
+                "--python-seed",
+                "1374",
+                "--epochs",
+                "100",
+                "--hidden-dim",
+                "8",
+                "--ae-lr",
+                "3e-3",
+                "--weight-decay",
+                "1e-3",
+                "--ae-batch-size",
+                "128",
+                "--iterations",
+                "1000",
                 "--vae",
-                
-                "--ae-lr", "3e-3",
-                "--weight-decay", "1e-3",
-                "--ae-batch-size", "128",
-                // "--dropout","0.2",
-                "--iterations", "1000",
                 "--opt-dt",
-                "--time-mdn",
-                "--mask-smooth"
+                "--time-mdn"
             ]
         }
     ]
 }
-
-
 // python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name TEMP --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000 --vae --opt-dt --time-mdn 
-
 // python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name NEW --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000 --vae
-
 // python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name NEW --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000 --vae         --time-mdn 
-
 //  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name NEW --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000 --vae --opt-dt 
-
-
-
-
-
-
 //  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name RTSGAN --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000         --opt-dt --time-mdn 
-
 //  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name RTSGAN --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000
- 
 //  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name RTSGAN --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000                 --time-mdn 
-
 //  python main_2012.py --dataset ./data/physio_data/full2012.pkl --log-dir ./sine_irr_result --task-name RTSGAN --python-seed 1374 --epochs 100 --hidden-dim 8  --ae-lr 3e-3 --weight-decay 1e-3 --ae-batch-size 128 --iterations 1000         --opt-dt  

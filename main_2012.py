@@ -134,6 +134,10 @@ else:
     train_set.set_input("dyn", "mask", "sta", "times", "lag",
                         "seq_len", "priv", "nex", "label")
 
+if dataset['train_set'].has_field('times_raw'):
+    train_set.set_input("dyn", "mask", "sta", "times", "lag",
+                        "seq_len", "priv", "nex", "label", "times_raw")
+
 if options.debug:
     train_set = train_set[0:DEBUG_SCALE]
 

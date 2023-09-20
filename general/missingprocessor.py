@@ -110,7 +110,7 @@ class MissingProcessor:
             return trans
 
     def inverse_transform(self, data, miss=None):
-        res = self.model.inverse_transform(data)
+        res = self.model.inverse_transform(data).flatten() ########################################################################################
         if "int" in self.which:
             res = res.round()
         res = res.astype(self.dtype)

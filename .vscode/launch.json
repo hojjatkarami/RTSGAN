@@ -63,7 +63,7 @@
                 // "--time-mdn",
                 // "--mask-smooth"
                 "--dataset",
-                "./data/physio_data/full2012.pkl",
+                "./data/physio_data/full2012_v2.pkl",
                 "--log-dir",
                 "./sine_irr_result",
                 "--task-name",
@@ -71,7 +71,7 @@
                 "--python-seed",
                 "1374",
                 "--epochs",
-                "100",
+                "3",
                 "--hidden-dim",
                 "8",
                 "--ae-lr",

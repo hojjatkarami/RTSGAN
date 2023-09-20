@@ -24,6 +24,7 @@ from plotly.subplots import make_subplots
 import plotly.express as px
 import plotly.graph_objects as go
 from MulticoreTSNE import MulticoreTSNE as TSNE
+PADDED_MASK = True
 DT_OPT = True
 MDN = False
 TIME_CONST = 0
@@ -33,6 +34,30 @@ HH = 1
 with open("./data/physio_data/physio_dt_transformer.pkl", "rb") as f:
     pt = pickle.load(f)
 
+def pad_mask(mask, times_raw, seq_len):
+    MAXLEN=64
+    last_t = times_raw[np.arange(
+        seq_len.shape[0]), (seq_len-1).tolist()]
+    # mask2 = torch.zeros(mask.shape[0], int(
+    #     max(last_t))+1, mask.shape[2]).to(mask.device)
+    # mask2 = torch.zeros(mask.shape[0], int(times_raw.max())+1, mask.shape[2]).to(mask.device)
+    mask2 = torch.zeros(mask.shape[0], MAXLEN, mask.shape[2]).to(mask.device)
+
+    for i in range(mask2.shape[0]):
+
+        # mask2[i, times_raw[i][:seq_len[i]].int().tolist()
+        #       ] = mask[i, :seq_len[i]]
+        unique_times = torch.unique(times_raw[i][:seq_len[i]].int())
+
+        # this is the biggest index of unique times
+        lookup_index = torch.cumsum(torch.unique(times_raw[i][:seq_len[i]].int(), return_counts=True)[1],dim=0)-1
+        
+        mask2[i, unique_times] = mask[i, lookup_index]
+        
+        # check
+        if not (set(times_raw[i][:seq_len[i]].int().tolist())) == set(torch.nonzero(mask2[i].sum(1)).flatten().tolist()):
+            aaa=1
+    return mask2
 
 def pad_zero(x):
     input_x = torch.zeros_like(x[:, 0:1, :])
@@ -109,8 +134,11 @@ class AeGAN:
 
         self.generator = Generator(
             self.params["noise_dim"], self.params["hidden_dim"], self.params["layers"]).to(self.device)
+        # self.discriminator = Discriminator(
+        #     self.params["embed_dim"]).to(self.device)
         self.discriminator = Discriminator(
-            self.params["embed_dim"]).to(self.device)
+            768).to(self.device)
+        self.gen_mask = nn.Linear(32,768).to(self.device)
         self.discriminator_optm = torch.optim.RMSprop(
             params=self.discriminator.parameters(),
             lr=self.params['gan_lr'],
@@ -286,16 +314,17 @@ class AeGAN:
         # BCE loss with red=none with data.shape
         loss = self.loss_mis(data, target) * scale
         seq_mask = seq_len_to_mask(seq_len)  # batch_size, seq_len
-        loss = torch.masked_select(loss, seq_mask.unsqueeze(-1))
+        if seq_mask.shape[1] == data.shape[1]:
+            loss = torch.masked_select(loss, seq_mask.unsqueeze(-1))
 
-        mx, _ = max_pooling(data, seq_len)  # batch_size, 35
-        # batch_size, 35 which features are available during the whole sequence
-        gold_mx, _ = torch.max(target, dim=1)
-        loss1 = self.loss_mis(mx, gold_mx)  # batch_size, 35
-        # + torch.mean(torch.masked_select(loss1, gold_mx == 0))
+            mx, _ = max_pooling(data, seq_len)  # batch_size, 35
+            # batch_size, 35 which features are available during the whole sequence
+            gold_mx, _ = torch.max(target, dim=1)
+            loss1 = self.loss_mis(mx, gold_mx)  # batch_size, 35
+            # + torch.mean(torch.masked_select(loss1, gold_mx == 0))
         return torch.mean(loss)
 
-    def plot_ae(self, dyn, times, mask, seq_len, out_dyn, gt, missing, seq_len_pred):
+    def plot_ae(self, dyn, times, mask, seq_len, out_dyn, gt, missing, mask_len, seq_len_pred, times_raw=None, missing2=None):
 
         # dyn, mask, of shape [bs, seq_len, n_channels]
         # times [bs, seq_len, 1]
@@ -341,8 +370,8 @@ class AeGAN:
         # times_pred = torch.masked_select(
         #     gt[:, :, 0].cpu(), torch.from_numpy(seq_len_to_mask(seq_len))).cpu().detach().numpy()
 
-        mask_len = seq_len_to_mask(
-            torch.from_numpy(seq_len).to(times.device)).unsqueeze(-1)  # False means masked
+        # mask_len = seq_len_to_mask(
+        #     torch.from_numpy(seq_len).to(times.device)).unsqueeze(-1)  # False means masked
 
         temp = times.diff(
             axis=1, prepend=TIME_CONST*torch.ones((times.shape[0], 1, 1), device=times.device))
@@ -370,24 +399,66 @@ class AeGAN:
         # )
 
         # a 1 x 3 subplot
-        fig = make_subplots(rows=3, cols=2, subplot_titles=(
-            "S1", "S2", "Correlation"))
+        fig = make_subplots(rows=5, cols=2, subplot_titles=(
+            "S1",                       "true mask", 
+            "S2",                       "pred mask",
+            "Correlation",                      "pred mask PADDED",
+            "",                     "true mask PADDED",
+            "",                     "missing2",
+            ))
         fig.add_trace(go.Scatter(
             x=x_true, y=(x_true-x_pred), mode='markers', name='x', line=dict(color='red')), row=1, col=1)
         fig.add_trace(go.Scatter(
-            x=seq_len, y=(seq_len-seq_len_pred), mode='markers', name='seq_len', line=dict(color='red')), row=1, col=2)
+            x=seq_len, y=(seq_len-seq_len_pred), mode='markers', name='seq_len', line=dict(color='red')), row=2, col=1)
         fig.add_trace(go.Scatter(
-            x=dt_true, y=(dt_true-dt_pred), mode='markers', name='dt', line=dict(color='red')), row=2, col=1)
+            x=dt_true, y=(dt_true-dt_pred), mode='markers', name='dt', line=dict(color='red')), row=3, col=1)
 
         # plot heatmap of masking pattern
         true_mask = mask.reshape(-1, mask.shape[-1])  # shape
         pred_mask = (missing > 0.5).int().reshape(-1, mask.shape[-1])\
             * mask_len.reshape(-1, mask_len.shape[-1])  # shape
         nonpadded_rows = true_mask.sum(-1) > 0
+
         fig.add_trace(go.Heatmap(
-            z=true_mask.cpu().detach().numpy().transpose()), row=2, col=2)
+            z=true_mask.cpu().detach().numpy().transpose()), row=1, col=2)
+
         fig.add_trace(go.Heatmap(
-            z=pred_mask.cpu().detach().numpy().transpose()), row=3, col=2)
+            z=pred_mask.cpu().detach().numpy().transpose()), row=2, col=2)
+
+        # compute transformed gt
+        n=5
+        dyn2 = []
+        gt2=gt*0
+        for i, length in enumerate(seq_len):
+            d = self.dynamic_processor.inverse_transform(
+                out_dyn[i, :length].cpu().detach(), missing[i, :length].cpu().detach(), gt[i, :length].cpu().detach())
+            gt2[i,:length,0] = torch.tensor(d.time.values).to(gt.device)
+            
+            dyn2.append(d)
+        gt2 = torch.clamp(gt2,0)
+        
+
+        pred_mask_padded = pad_mask(
+                        missing, gt2[:,:,0], seq_len)
+        pred_mask_padded = (pred_mask_padded>0.5).int().reshape(-1, mask.shape[-1])
+        fig.add_trace(go.Heatmap(
+            z=pred_mask_padded.cpu().detach().numpy().transpose()), row=3, col=2)
+
+        
+
+        if times_raw is not None:
+            
+
+            true_mask_padded = pad_mask(
+                mask, times_raw, seq_len).reshape(-1, mask.shape[-1])
+            fig.add_trace(go.Heatmap(
+                z=true_mask_padded.cpu().detach().numpy().transpose()), row=4, col=2)
+
+            pred_mask2 = (missing2 > 0.5).int().reshape(-1, mask.shape[-1])
+
+            fig.add_trace(go.Heatmap(
+                z=pred_mask2.cpu().detach().numpy().transpose()), row=5, col=2)
+
         # fig.update_layout(
         #     xaxis=dict(scaleanchor="y", scaleratio=1),
         #     yaxis=dict(scaleanchor="x", scaleratio=1)
@@ -572,9 +643,11 @@ class AeGAN:
                 seq_len_pred = self.static_processor.inverse_transform(
                     out_sta.detach().cpu().numpy()).iloc[:, -1].values
 
+                # mask_len
+                NNN = 2
                 fig_AE_rec, fig2 = self.plot_ae(
-                    dyn, times, mask, seq_len.detach().cpu().numpy(),
-                    out_dyn, gt, missing, seq_len_pred)
+                    dyn[:NNN], times[:NNN], mask[:NNN], seq_len.detach().cpu().numpy()[:NNN],
+                    out_dyn[:NNN], gt[:NNN], missing[:NNN],mask_len[:NNN], seq_len_pred)[:NNN]
                 wandb.log({
                     "example_rec": wandb.Plotly(fig_AE_rec),
                     "dt_corr": wandb.Plotly(fig2),
@@ -709,7 +782,7 @@ class AeGAN:
         min_loss = 1e15
         best_epsilon = 0
         train_batch = DataSetIter(
-            dataset=dataset, batch_size=self.params["ae_batch_size"], sampler=RandomSampler())
+            dataset=dataset, batch_size=self.params["ae_batch_size"])  # , sampler=RandomSampler()
         force = 1
 
         Ls = [np.array(sample['mask']).shape[0]
@@ -722,6 +795,7 @@ class AeGAN:
             con_loss = 0
             dis_loss = 0
             KLD_loss = 0
+            KLD_mask_loss = 0
             loss_abs = 0
             loss_abs_bl = 0
             static_loss = 0
@@ -766,16 +840,38 @@ class AeGAN:
                     dt = None
                     dt = True
 
-                out_sta, out_dyn, missing, gt = self.ae(
-                    sta, dyn, lag, mask, priv, nex, times, seq_len, dt=dt, forcing=force)
+                if "times_raw" in batch_x:
+                    times_raw = batch_x["times_raw"].to(self.device)
+                    out_sta, out_dyn, missing, missing2, gt = self.ae(
+                        sta, dyn, lag, mask, priv, nex, times, seq_len, dt=dt, forcing=force, times_raw=times_raw)
+                else:
+
+                    out_sta, out_dyn, missing, gt = self.ae(
+                        sta, dyn, lag, mask, priv, nex, times, seq_len, dt=dt, forcing=force)
                 # [bs, max_len, n_features], [bs, max_len, n_features], [bs]
 
                 # LOSS missing
+                if not PADDED_MASK:
+                    mask_smoothed = applySmoothing(mask)
+                    loss3_smoothed = self.missing_loss(
+                        missing, mask_smoothed, seq_len)
+                    loss3_hard = self.missing_loss(missing, mask, seq_len)
+                else:
+                    # def pad_mask(mask, times_raw, seq_len):
+                    #     last_t = times_raw[np.arange(
+                    #         seq_len.shape[0]), (seq_len-1).tolist()]
+                    #     mask2 = torch.zeros(mask.shape[0], int(
+                    #         max(last_t))+1, mask.shape[2]).to(mask.device)
+                    #     for i in range(mask2.shape[0]):
+                    #         mask2[i, times_raw[i][:seq_len[i]].int(
+                    #         ).tolist()] = mask[i, :seq_len[i]]
+                    #     return mask2
 
-                mask_smoothed = applySmoothing(mask)
-                loss3_smoothed = self.missing_loss(
-                    missing, mask_smoothed, seq_len)
-                loss3_hard = self.missing_loss(missing, mask, seq_len)
+                    mask2 = pad_mask(mask, times_raw, seq_len)
+                    mask_smoothed = applySmoothing(mask2)
+                    loss3_smoothed = self.missing_loss(
+                        missing2, mask_smoothed, seq_len)
+                    loss3_hard = self.missing_loss(missing2, mask2, seq_len)
 
                 if self.mask_smooth:
                     loss3 = loss3_smoothed
@@ -896,8 +992,8 @@ class AeGAN:
                 scale3 = 0.1
 
                 loss = scale1 * loss1*0 + scale2 * \
-                    (loss2*0 + loss3) + scale3 * loss4*0 + self.ae.KLD*0
-                # loss = loss1+loss2 + self.ae.KLD*5
+                    (loss2*0 + loss3) + scale3 * loss4 + self.ae.encoder.KLD*0 + self.ae.KLD_mask*0
+                # loss = loss1+loss2 + self.ae.encoder.KLD*5
                 # loss = loss1 + loss2 + loss3 + loss4
                 if i > 0:
                     loss.backward()
@@ -906,13 +1002,15 @@ class AeGAN:
                 tot_loss += loss.item()
                 con_loss += loss1.item()
                 dis_loss += loss2.item()
-                KLD_loss += self.ae.KLD.item()
+                KLD_loss += self.ae.encoder.KLD.item()
+                KLD_mask_loss += self.ae.KLD_mask.item()
 
                 tot += 1
 
             tot_loss /= tot
             wandb.log({"ae_loss": tot_loss,
                        "KLD loss": KLD_loss/tot,
+                       "KLD_mask loss": KLD_mask_loss/tot,
                       "static_loss": con_loss/tot,
                        "dynamic_loss": dis_loss/tot,
                        "miss_loss": miss_loss1/tot,
@@ -935,10 +1033,10 @@ class AeGAN:
             if i % 5 == 0:
                 seq_len_pred = self.static_processor.inverse_transform(
                     out_sta.detach().cpu().numpy()).iloc[:, -1].values
-
+                NNN=3
                 fig_AE_rec, fig2 = self.plot_ae(
-                    dyn, times, mask, seq_len.detach().cpu().numpy(),
-                    out_dyn, gt, missing, seq_len_pred)
+                    dyn[:NNN], times[:NNN], mask[:NNN], seq_len.detach().cpu().numpy()[:NNN],
+                    out_dyn[:NNN], gt[:NNN], missing[:NNN],mask_len[:NNN], seq_len_pred[:NNN], times_raw=times_raw[:NNN], missing2=missing2[:NNN])
 
                 # x_values = torch.masked_select(torch.arange(
                 #     out_dyn.shape[1], device=mask.device), mask[0, :, 0] == 1)
@@ -969,6 +1067,8 @@ class AeGAN:
                     # wandb.log(
                     #     {"example_AE_syn": wandb.Plotly(fig_AE_syn)}, step=i)
                 else:
+                    fig_vae = go.Figure()
+                    fig_AE_syn = go.Figure()
                     real_rep = out
 
                 if len(real_rep.shape) == 3:
@@ -990,10 +1090,10 @@ class AeGAN:
                      "example_rec": wandb.Plotly(fig_AE_rec),
                      "dt_corr": wandb.Plotly(fig2),
                      "tsne_AE": wandb.Plotly(fig_tsne)}, step=i)
-            if i % 100 == 99:
+            if i % 100 == 0:
                 torch.save(self.ae.state_dict(),
                            '{}/ae{}.dat'.format(self.params["root_dir"], i))
-                self.generate_ae(dataset[:100])
+                # self.generate_ae(dataset[:100])
 
         torch.save(self.ae.state_dict(),
                    '{}/ae.dat'.format(self.params["root_dir"]))
@@ -1028,14 +1128,29 @@ class AeGAN:
                     nex = batch_x["nex"].to(self.device)
                     times = batch_x["times"].to(self.device)
                     seq_len = batch_x["seq_len"].to(self.device)
-
-                    out = self.ae.encoder(
-                        sta, dyn, priv, nex, mask, times, seq_len)
+                    if "dt" in batch_x:
+                        dt = batch_x["dt"].to(self.device)
+                    else:
+                        dt = None
+                        dt = True
+                    if "times_raw" in batch_x:
+                        times_raw = batch_x["times_raw"].to(self.device)
+                        # out_sta, out_dyn, missing, missing2, gt = self.ae(
+                        #     sta, dyn, lag, mask, priv, nex, times, seq_len, dt=dt, forcing=force, times_raw=times_raw)
+                        out = self.ae.encoder(
+                            sta, dyn, priv, nex, mask, times, seq_len, dt)
+                        
+                        mask2 = pad_mask(mask, times_raw, seq_len)
+                        hidden_mask = self.ae.mask_encoder2(mask2.unsqueeze(1))
+                    else:
+                        out = self.ae.encoder(
+                            sta, dyn, priv, nex, mask, times, seq_len)
                     if isinstance(out, tuple):
                         mu, logvar = out
                         real_rep = self.ae.reparameterize(mu, logvar)
                     else:
-                        real_rep = out
+                        # real_rep = out
+                        real_rep = hidden_mask.view(hidden_mask.shape[0],-1)
                     d_real = self.discriminator(real_rep)
                     real_labels = torch.ones_like(d_real)
                     # dloss_real = -d_real.mean()
@@ -1051,7 +1166,7 @@ class AeGAN:
                     # On fake data
                     # with torch.no_grad():
                     x_fake = self.generator(z)
-
+                    x_fake = self.gen_mask(x_fake)
                     # x_fake.requires_grad_()
                     d_fake = self.discriminator(x_fake.detach())
                     fake_labels = torch.zeros_like(d_fake)
@@ -1088,6 +1203,8 @@ class AeGAN:
             z = torch.randn(batch_size, self.params['noise_dim']).to(
                 self.device)  # batch_size, noise_dim
             x_fake = self.generator(z)  # batch_size, hidden_dim
+            x_fake = self.gen_mask(x_fake)
+
             d_fake = self.discriminator(x_fake)  # batch_size, 1
             # g_loss = -torch.mean(self.discriminator(x_fake))  # [batch,1]->scalar
             # g_loss.backward()
@@ -1118,15 +1235,35 @@ class AeGAN:
                 # plot = self.save_sample_wandb(
                 #     seq_len=batch_x['seq_len'][0].item())
                 fig = self.save_sample_wandb()
-                wandb.log(
-                    {"example_syn": wandb.Plotly(fig)}, step=iteration+1)
+                
 
                 # plot t-SNE of latent space
                 plot = self.plot_tsne(real_rep.cpu().detach(
                 ).numpy(), x_fake.cpu().detach().numpy())
                 wandb.log(
                     {"tsne": plot}, step=iteration+1)
+                
 
+
+                # plot generated masks
+                hidden_mask = x_fake.view(x_fake.shape[0],8,16,6)
+                gen_missing2 = self.ae.mask_decoder2(hidden_mask).squeeze()[:, :mask2.shape[1], :mask2.shape[2]]  # [bs, max_len, varible]
+
+                
+                fig_masks = make_subplots(rows=2, cols=2, subplot_titles=(
+                    "S1",                       "true mask", 
+                    # "S2",                       "pred mask",
+                    # "Correlation",                      "pred mask PADDED",
+                    # "",                     "true mask PADDED",
+                    # "",                     "missing2",
+                    ))
+                
+                pred_mask2 = (gen_missing2 > 0.5).int().reshape(-1, mask.shape[-1])
+                fig_masks.add_trace(go.Heatmap(
+                z=pred_mask2.cpu().detach().numpy().transpose()), row=1, col=2)
+
+                wandb.log(
+                    {"example_syn": wandb.Plotly(fig_masks)}, step=iteration+1)
         torch.save(self.generator.state_dict(),
                    '{}/generator.dat'.format(self.params["root_dir"]))
 

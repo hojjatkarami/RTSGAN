@@ -1101,7 +1101,7 @@ class AeGAN:
     def train_gan2(self, dataset, iterations=15000, d_update=5):
         self.discriminator.train()
         self.generator.train()
-        self.ae.train()
+        self.ae.eval()
         batch_size = self.params["gan_batch_size"]
         idxs = list(range(len(dataset)))
         batch = DataSetIter(
@@ -1114,11 +1114,14 @@ class AeGAN:
             toggle_grad(self.discriminator, True)
             bce_loss = nn.BCEWithLogitsLoss().to(self.device)
 
+            d_update=1
+
             for j in range(d_update):
+                kk=0
                 for batch_x, batch_y in batch:
+                    kk+=1
                     self.discriminator_optm.zero_grad()
-                    z = torch.randn(
-                        batch_size, self.params['noise_dim']).to(self.device)
+                    
 
                     sta = batch_x["sta"].to(self.device)
                     dyn = batch_x["dyn"].to(self.device)
@@ -1128,6 +1131,7 @@ class AeGAN:
                     nex = batch_x["nex"].to(self.device)
                     times = batch_x["times"].to(self.device)
                     seq_len = batch_x["seq_len"].to(self.device)
+                    current_batch_size = sta.shape[0]
                     if "dt" in batch_x:
                         dt = batch_x["dt"].to(self.device)
                     else:
@@ -1135,27 +1139,27 @@ class AeGAN:
                         dt = True
                     if "times_raw" in batch_x:
                         times_raw = batch_x["times_raw"].to(self.device)
-                        # out_sta, out_dyn, missing, missing2, gt = self.ae(
-                        #     sta, dyn, lag, mask, priv, nex, times, seq_len, dt=dt, forcing=force, times_raw=times_raw)
-                        out = self.ae.encoder(
-                            sta, dyn, priv, nex, mask, times, seq_len, dt)
+
+                        # out = self.ae.encoder(
+                        #     sta, dyn, priv, nex, mask, times, seq_len, dt)
                         
                         mask2 = pad_mask(mask, times_raw, seq_len)
                         hidden_mask = self.ae.mask_encoder2(mask2.unsqueeze(1))
                     else:
                         out = self.ae.encoder(
                             sta, dyn, priv, nex, mask, times, seq_len)
-                    if isinstance(out, tuple):
-                        mu, logvar = out
-                        real_rep = self.ae.reparameterize(mu, logvar)
-                    else:
-                        # real_rep = out
-                        real_rep = hidden_mask.view(hidden_mask.shape[0],-1)
+                    # if isinstance(out, tuple):
+                    #     mu, logvar = out
+                    #     real_rep = self.ae.reparameterize(mu, logvar)
+                    # else:
+                    #     real_rep = out
+                    real_rep = hidden_mask.view(hidden_mask.shape[0],-1)
                     d_real = self.discriminator(real_rep)
                     real_labels = torch.ones_like(d_real)
-                    # dloss_real = -d_real.mean()
-                    d_loss_real = bce_loss(d_real, real_labels)
-                    # dloss_real.backward()
+                    
+                    # dloss_real = bce_loss(d_real, real_labels)
+                    
+                    dloss_real = -d_real.mean()
 
                     """
                     dloss_real.backward(retain_graph=True)
@@ -1164,19 +1168,27 @@ class AeGAN:
                     """
 
                     # On fake data
+                    z = torch.randn(
+                        current_batch_size, self.params['noise_dim']).to(self.device)
                     # with torch.no_grad():
                     x_fake = self.generator(z)
                     x_fake = self.gen_mask(x_fake)
                     # x_fake.requires_grad_()
                     d_fake = self.discriminator(x_fake.detach())
                     fake_labels = torch.zeros_like(d_fake)
-                    d_loss_fake = bce_loss(d_fake, fake_labels)
-
+                    
+                    # dloss_fake = bce_loss(d_fake, fake_labels)
+                    
+                    dloss_fake = d_fake.mean()
+                    
                     # Backpropagation and optimization for Discriminator
-                    disc_loss = (d_loss_real + d_loss_fake)/2
+                    disc_loss = (dloss_real + dloss_fake)/2                    
                     disc_loss.backward()
 
-                    # dloss_fake = d_fake.mean()
+                    # dloss_real.backward()
+                    # dloss_fake.backward()
+
+
                     # """
                     # y = d_fake.new_full(size=d_fake.size(), fill_value=0)
                     # dloss_fake = F.binary_cross_entropy_with_logits(d_fake, y)
@@ -1193,37 +1205,45 @@ class AeGAN:
                     self.discriminator_optm.step()
                     # d_loss = dloss_fake + dloss_real
                     avg_d_loss += disc_loss.item()
-                    break
+                    # break
 
-            avg_d_loss /= d_update
+                    if kk%5==0:
+                        kk=0
+                        avg_d_loss /= d_update
 
-            toggle_grad(self.generator, True)
-            toggle_grad(self.discriminator, False)
-            self.generator_optm.zero_grad()
-            z = torch.randn(batch_size, self.params['noise_dim']).to(
-                self.device)  # batch_size, noise_dim
-            x_fake = self.generator(z)  # batch_size, hidden_dim
-            x_fake = self.gen_mask(x_fake)
+                        toggle_grad(self.generator, True)
+                        toggle_grad(self.discriminator, False)
+                        self.generator_optm.zero_grad()
+                        z = torch.randn(current_batch_size, self.params['noise_dim']).to(
+                            self.device)  # batch_size, noise_dim
+                        x_fake = self.generator(z)  # batch_size, hidden_dim
+                        x_fake = self.gen_mask(x_fake)
 
-            d_fake = self.discriminator(x_fake)  # batch_size, 1
-            # g_loss = -torch.mean(self.discriminator(x_fake))  # [batch,1]->scalar
-            # g_loss.backward()
-            # self.generator_optm.step()
-            # Generator's loss
-            g_loss = bce_loss(d_fake, real_labels)
-            g_loss2 = (bce_loss(d_fake, fake_labels) +
-                       bce_loss(d_real, real_labels))/2
-            # Backpropagation and optimization for Generator
-            self.generator.zero_grad()
-            g_loss.backward()
-            self.generator_optm.step()
+                        d_fake = self.discriminator(x_fake)  # batch_size, 1
 
-            wandb.log({"d_loss": avg_d_loss, "g_loss": g_loss.item(), "g_loss2": g_loss2.item()},
+                        # Generator's loss
+                        # g_loss = bce_loss(d_fake, real_labels)
+                        # g_loss2 = (bce_loss(d_fake, fake_labels) +
+                        #            bce_loss(d_real, real_labels))/2
+
+                        g_loss = -torch.mean(d_fake)  # [batch,1]->scalar
+                        g_loss2 = g_loss*0
+                
+
+                
+                        # Backpropagation and optimization for Generator
+                        self.generator.zero_grad()
+                        g_loss.backward()
+                        self.generator_optm.step()
+
+            wandb.log({"GAN/d_loss": avg_d_loss, "GAN/g_loss": g_loss.item(), "g_loss2": g_loss2.item(),
+            "GAN/dloss_real": -dloss_real.item(), "GAN/dloss_fake": dloss_fake.item(),"GAN/gloss_fake": -g_loss.item(),
+            },
                       step=iteration+1)
-            if iteration % 50 == 49:
-                self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] [%f]' % (
-                    iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item(), reg.item()
-                ))
+            # if iteration % 50 == 49:
+            #     self.logger.info('[Iteration %d/%d] [%f] [D loss: %f] [G loss: %f] [%f]' % (
+            #         iteration, iterations, time.time()-t1, avg_d_loss, g_loss.item()#, reg.item()
+            #     ))
 
             if iteration % 10 == 0:
                 # table = self.save_sample_wandb()
@@ -1246,21 +1266,27 @@ class AeGAN:
 
 
                 # plot generated masks
-                hidden_mask = x_fake.view(x_fake.shape[0],8,16,6)
+                hidden_mask = x_fake.view(x_fake.shape[0],8,16,6)[:10]                
                 gen_missing2 = self.ae.mask_decoder2(hidden_mask).squeeze()[:, :mask2.shape[1], :mask2.shape[2]]  # [bs, max_len, varible]
 
-                
-                fig_masks = make_subplots(rows=2, cols=2, subplot_titles=(
-                    "S1",                       "true mask", 
+                real_hidden = real_rep.view(x_fake.shape[0],8,16,6)[:10]                
+                real_missing2 = self.ae.mask_decoder2(real_hidden).squeeze()[:, :mask2.shape[1], :mask2.shape[2]]  # [bs, max_len, varible]
+
+                fig_masks = make_subplots(rows=1, cols=2, subplot_titles=(
+                    "Real",                       "Generated", 
                     # "S2",                       "pred mask",
                     # "Correlation",                      "pred mask PADDED",
                     # "",                     "true mask PADDED",
                     # "",                     "missing2",
                     ))
                 
-                pred_mask2 = (gen_missing2 > 0.5).int().reshape(-1, mask.shape[-1])
+                real_mask2 = (real_missing2 > 0.5).int().reshape(-1, mask.shape[-1])
                 fig_masks.add_trace(go.Heatmap(
-                z=pred_mask2.cpu().detach().numpy().transpose()), row=1, col=2)
+                z=real_mask2.cpu().detach().numpy().transpose()), row=1, col=1)
+                
+                gen_mask2 = (gen_missing2 > 0.5).int().reshape(-1, mask.shape[-1])
+                fig_masks.add_trace(go.Heatmap(
+                z=gen_mask2.cpu().detach().numpy().transpose()), row=1, col=2)
 
                 wandb.log(
                     {"example_syn": wandb.Plotly(fig_masks)}, step=iteration+1)

@@ -22,7 +22,7 @@ class Generator(nn.Module):
         self.block_4 = nn.Linear(input_dim, hidden_dim*(layers+1))
         self.final = nn.LeakyReLU(0.2)
         self.block_3 = block(input_dim, input_dim)
-
+        
     def forward(self, x):
         x1 = self.block_0(x) + x
         x1 = self.block_1(x1) + x1

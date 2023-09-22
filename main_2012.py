@@ -64,7 +64,7 @@ parser.add_argument("--fix-gan", dest="fix_gan",
 
 parser.add_argument("--ae-batch-size", default=128, dest="ae_batch_size", type=int,
                     help="Minibatch size for autoencoder")
-parser.add_argument("--gan-batch-size", default=512, dest="gan_batch_size", type=int,
+parser.add_argument("--gan-batch-size", default=128, dest="gan_batch_size", type=int,
                     help="Minibatch size for WGAN")
 parser.add_argument("--embed-dim", default=96,
                     dest="embed_dim", type=int, help="dim of hidden state")
@@ -133,6 +133,10 @@ if dataset['train_set'].has_field('dt'):
 else:
     train_set.set_input("dyn", "mask", "sta", "times", "lag",
                         "seq_len", "priv", "nex", "label")
+
+if dataset['train_set'].has_field('times_raw'):
+    train_set.set_input("dyn", "mask", "sta", "times", "lag",
+                        "seq_len", "priv", "nex", "label", "times_raw")
 
 if options.debug:
     train_set = train_set[0:DEBUG_SCALE]

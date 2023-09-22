@@ -308,9 +308,14 @@ class TransformerVariationalEncoder(nn.Module):
             # mu = self.fc_mu(transformer_output.mean(dim=1))  # bs, hidden_dim*4
             # # Aggregate over sequence dimension
             # logvar = self.fc_logvar(transformer_output.mean(dim=1))
+        hidden = self.reparameterize(mu, logvar)
+        self.KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 
-        return mu, logvar
-
+        return hidden # mu, logvar
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5*logvar)
+        eps = torch.randn_like(std)
+        return mu + eps*std
 
 def apply_activation(processors, x):
     data = []
@@ -911,7 +916,7 @@ class TransformerDecoder(nn.Module):
             t = gen_times[-1].detach()
             mask = mask.detach()
 
-        dyn = torch.cat(dyn, dim=1)
+        dyn = torch.cat(dyn, dim=1) # shape is bs, max_len, d
         gen_mask = torch.cat(gen_mask, dim=1)
         gen_times = torch.cat(gen_times, dim=1)
         return dyn, gen_mask, gen_times
@@ -1092,19 +1097,43 @@ class VariationalAutoencoder(nn.Module):
         )
 
         self.mask_encoder2 = nn.Sequential(
-            nn.Conv2d(1, 2, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(1, 4, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(2, 4, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(4, 8, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
         )
         self.mask_decoder2 = nn.Sequential(
-            nn.ConvTranspose2d(4, 2, kernel_size=3, stride=2,
+            nn.ConvTranspose2d(8, 4, kernel_size=3, stride=2,
                                padding=1, output_padding=1),
             nn.ReLU(),
-            nn.ConvTranspose2d(2, 1, kernel_size=3, stride=2,
+            nn.ConvTranspose2d(4, 1, kernel_size=3, stride=2,
                                padding=1, output_padding=1),
             nn.Sigmoid()  # Sigmoid for binary output
         )
+
+
+        # for VAE
+        VAE_DIM = 32
+        self.fc_mu = nn.Linear(8 * 16 *6, VAE_DIM)
+        self.fc_logvar = nn.Linear(8 * 16 *6, VAE_DIM)
+        self.vae_decoder = nn.Sequential(
+            nn.Linear(VAE_DIM, 8 * 16 *6),
+            nn.ReLU(),
+        )
+        # self.mask_encoder3 = nn.Sequential(
+        #     nn.Conv2d(1, 4, kernel_size=3, stride=2, padding=1),
+        #     nn.ReLU(),
+        #     nn.Conv2d(4, 8, kernel_size=3, stride=2, padding=1),
+        #     nn.ReLU(),
+        # )
+        # self.mask_decoder3 = nn.Sequential(
+        #     nn.ConvTranspose2d(8, 4, kernel_size=3, stride=2,
+        #                        padding=1, output_padding=1),
+        #     nn.ReLU(),
+        #     nn.ConvTranspose2d(4, 1, kernel_size=3, stride=2,
+        #                        padding=1, output_padding=1),
+        #     nn.Sigmoid()  # Sigmoid for binary output
+        # )
 
         self.time_decoder = nn.Sequential(
             nn.Linear(hidden_dim*4, 8),
@@ -1117,13 +1146,13 @@ class VariationalAutoencoder(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps*std
 
-    def forward(self, sta, dyn, lag, mask, priv, nex, times, seq_len, dt=None, forcing=1):
-        mu, logvar = self.encoder(
+    def forward(self, sta, dyn, lag, mask, priv, nex, times, seq_len, dt=None, forcing=1, times_raw=None):
+        hidden = self.encoder(
             sta, dyn, priv, nex, mask, times, seq_len, dt)
-        self.KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+        # self.KLD = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
 
-        hidden = self.reparameterize(mu, logvar)
-
+        # hidden = self.reparameterize(mu, logvar)
+        # hidden.shape = bs, max_len, hidden_dim
         out_sta, out_dyn, missing, gt = self.decoder(
             hidden, sta, dyn, lag, mask, priv, times, seq_len, dt=dt, forcing=forcing)
 
@@ -1133,8 +1162,68 @@ class VariationalAutoencoder(nn.Module):
         # missing = self.mask_decoder(
         #     hidden[np.arange(hidden.shape[0]), seq_len-1]).unsqueeze(1).expand_as(mask)
 
-        # approach 3
+        # approach 3 Convolution layers
         missing = self.mask_decoder2(self.mask_encoder2(
             mask.unsqueeze(1))).squeeze()[:, :mask.shape[1], :mask.shape[2]]  # [bs, h, varible]
+
+        # approach 4 Convolution on padded mask matrix
+        # [bs] last timestamp
+
+        def pad_mask(mask, times_raw, seq_len):
+            last_t = times_raw[np.arange(
+                seq_len.shape[0]), (seq_len-1).tolist()]
+            mask2 = torch.zeros(mask.shape[0], int(
+                max(last_t))+1, mask.shape[2]).to(mask.device)
+
+            MAX_LEN = 64
+            mask2 = torch.zeros(
+                mask.shape[0], MAX_LEN, mask.shape[2]).to(mask.device)
+            for i in range(mask2.shape[0]):
+                # mask2[i, times_raw[i][:seq_len[i]].int().tolist()
+                #       ] = mask[i, :seq_len[i]]
+                unique_times = torch.unique(times_raw[i][:seq_len[i]].int())
+
+                # this is the biggest index of unique times
+                lookup_index = torch.cumsum(torch.unique(times_raw[i][:seq_len[i]].int(), return_counts=True)[1],dim=0)-1
+                
+                mask2[i, unique_times] = mask[i, lookup_index]
+                
+                # check
+                if not (set(times_raw[i][:seq_len[i]].int().tolist())) == set(torch.nonzero(mask2[i].sum(1)).flatten().tolist()):
+                    aaa=1
+
+                    # this is the biggest index of unique times
+                    # torch.cumsum(torch.unique(times_raw[i][:seq_len[i]].int(), return_counts=True)[1],dim=0)-1
+
+
+
+            return mask2
+
+        mask2 = pad_mask(mask, times_raw, seq_len)
+
+
+        
+        hidden_mask = self.mask_encoder2(mask2.unsqueeze(1))
+
+        self.KLD_mask = self.encoder.KLD*0
+        # FOR VAE
+        # mu = self.fc_mu(hidden_mask.view(hidden_mask.shape[0], -1))
+        # logvar = self.fc_logvar(hidden_mask.view(hidden_mask.shape[0], -1))
+        # hidden_mask = self.reparameterize(mu, logvar)
+        # hidden_mask = self.vae_decoder(hidden_mask)
+        # hidden_mask = hidden_mask.view(hidden_mask.shape[0], 8, 16, 6)
+        # self.KLD_mask = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+
+
+        missing2 = self.mask_decoder2(hidden_mask).squeeze()[:, :mask2.shape[1], :mask2.shape[2]]  # [bs, h, varible]
+        # generate gt2 from missing2
+        pred_mask2 = (missing2 > 0.5).int()
+        # torch.nonzero(pred_mask2.sum(2)[0]).flatten()
         # gt = self.time_decoder(hidden)
-        return out_sta, out_dyn, missing, gt
+
+        gt2 = torch.zeros_like(mask2[:,:,0])
+        for i in range(gt.shape[0]):
+            temp = torch.nonzero(pred_mask2[i].sum(1)).flatten()
+            gt2[i, :len(temp)] = temp
+
+        return out_sta, out_dyn, missing, missing2, gt
